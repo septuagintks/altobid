@@ -25,8 +25,8 @@ model:
   max_new_tokens: 64
   temperature: 0.1
   top_p: 0.8
-  system_prompt: "你是一个只解答图片中算式的助手。只输出最终数字答案，不要任何解释、单位或标点。"
-  user_prompt: "计算图中的算式，直接给出答案。"
+  system_prompt: "你是一个视觉问答助手。直接回答图片中的问题，只输出最终答案，不要解释过程、不要单位符号、不要标点。"
+  user_prompt: "回答图中的问题。"
 
 output:
   copy_to_clipboard: true
