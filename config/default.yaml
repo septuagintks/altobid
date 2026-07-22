@@ -1,17 +1,9 @@
 # altobid 默认配置
 # 本地覆盖请写入 config/local.yaml（已 gitignore），仅需覆盖差异项。
 
-capture:
-  interval_ms: 200          # 采集间隔，200ms ≈ 5 FPS
-
-change_detect:
-  method: absdiff           # absdiff | phash
-  downscale: 64             # 变化检测前缩放到的边长（灰度小图）
-  pixel_delta: 25           # 单像素灰度差 > 此值才算“变了”（absdiff 用）
-  change_threshold: 0.02    # 差异像素占比，超过判定为“变化”
-  stable_frames: 3          # 连续稳定帧数，达到才放行推理
-  stable_threshold: 0.01    # 判定“稳定”的帧间差异上限
-  cooldown_s: 1.5           # 一次推理后的冷却期，防结果动画自触发
+server:
+  host: 127.0.0.1           # 仅本机访问，切勿改 0.0.0.0 或对外暴露
+  port: 8799                # 与油猴脚本 ENDPOINT 保持一致
 
 preprocess:
   min_pixels: 262144        # 512*512，视觉 token 下限
@@ -25,18 +17,9 @@ model:
   max_new_tokens: 64
   temperature: 0.1
   top_p: 0.8
-  system_prompt: "你是一个视觉问答助手。直接回答图片中的问题，只输出最终答案，不要解释过程、不要单位符号、不要标点。"
-  user_prompt: "回答图中的问题。"
-
-output:
-  copy_to_clipboard: true
-  show_window: false        # 是否弹悬浮窗展示答案
-  window_duration_ms: 3000  # 悬浮窗自动关闭时长（毫秒）
+  system_prompt: "你是一个网页验证码识别助手。仔细看图并按要求作答，只输出最终答案，不要解释过程、不要单位符号、不要标点。"
+  user_prompt: "识别并回答图中的问题，直接给出答案。"
 
 logging:
   level: INFO               # DEBUG | INFO | WARNING | ERROR
   file: ./logs/altobid.log  # 置空则仅控制台
-
-debug:
-  save_frames: false        # 触发推理的帧落盘到 debug_frames/
-  frames_dir: ./debug_frames

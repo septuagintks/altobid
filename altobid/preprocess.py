@@ -1,9 +1,9 @@
-"""ROI 预处理。
+"""图片预处理。
 
-把采集到的 BGR 帧转成模型输入的 PIL RGB Image：
-1. 按 Qwen2.5-VL 的 smart_resize 规则缩放，使总像素落在 [min_pixels, max_pixels]，
-   且宽高对齐到 factor(28) 的倍数；
-2. BGR -> RGB -> PIL.Image。
+把油猴脚本送来的验证码图转成模型输入的 PIL RGB Image：
+1. 转 RGB；
+2. 按 Qwen2.5-VL 的 smart_resize 规则缩放，使总像素落在 [min_pixels, max_pixels]，
+   且宽高对齐到 factor(28) 的倍数。
 
 自带 smart_resize 实现，输出尺寸与 Qwen processor 期望一致，避免二次缩放，
 也不依赖尚未安装的 qwen_vl_utils。
@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import math
 
-import cv2
-import numpy as np
 from PIL import Image
 
 from . import get_logger
@@ -69,20 +67,20 @@ class Preprocessor:
         self.max_pixels = max_pixels
         self.factor = factor
 
-    def process(self, frame: np.ndarray) -> Image.Image:
-        """frame: (H, W, 3) BGR uint8 -> 缩放后的 PIL RGB Image。"""
-        h, w = frame.shape[:2]
+    def process(self, image: Image.Image) -> Image.Image:
+        """PIL Image（任意模式）-> RGB、按 smart_resize 对齐的 PIL Image。
+
+        分辨率细节最终仍交给 Qwen processor 的 min/max_pixels，这里只做 RGB 归一
+        + 超大图预缩放，避免把巨图直接喂给模型。
+        """
+        rgb = image.convert("RGB")
+        w, h = rgb.size
         new_h, new_w = smart_resize(
             h, w, self.factor, self.min_pixels, self.max_pixels
         )
-
         if (new_h, new_w) != (h, w):
-            # 缩小用 INTER_AREA，放大用 INTER_CUBIC
-            interp = cv2.INTER_AREA if new_h * new_w < h * w else cv2.INTER_CUBIC
-            resized = cv2.resize(frame, (new_w, new_h), interpolation=interp)
-        else:
-            resized = frame
-
-        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        log.debug("预处理 %dx%d -> %dx%d", w, h, new_w, new_h)
-        return Image.fromarray(rgb)
+            # 缩小用 LANCZOS，放大用 BICUBIC
+            resample = Image.LANCZOS if new_w * new_h < w * h else Image.BICUBIC
+            rgb = rgb.resize((new_w, new_h), resample=resample)
+            log.debug("预处理 %dx%d -> %dx%d", w, h, new_w, new_h)
+        return rgb

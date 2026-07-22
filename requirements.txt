@@ -7,14 +7,11 @@ accelerate>=0.34.0
 qwen-vl-utils>=0.0.8          # Qwen2.5-VL 官方图像预处理工具
 pillow>=10.0.0
 
-# 屏幕采集与图像处理
-mss>=9.0.1                    # 高速屏幕截图
-opencv-python>=4.9.0          # 变化检测 / ROI resize
-numpy>=1.26.0
+# 本地推理服务（仅绑定 127.0.0.1）
+flask>=3.0.0
 
-# 配置与工具
+# 配置
 pyyaml>=6.0
-pynput>=1.7.6                 # 全局热键监听
 
 # 量化：bitsandbytes NF4 4bit（默认，8GB 显存卡推荐；运行时从 fp16 权重量化）
 # 注：AWQ 在 Windows + torch2.6 下内核(awq_ext) ABI 不匹配无法加载，故改用 bitsandbytes。

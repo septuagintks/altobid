@@ -1,5 +1,4 @@
 """预处理测试。"""
-import numpy as np
 import pytest
 from PIL import Image
 
@@ -9,8 +8,8 @@ MIN_P = 512 * 512
 MAX_P = 768 * 768
 
 
-def _bgr(h: int, w: int) -> np.ndarray:
-    return np.random.default_rng(0).integers(0, 255, (h, w, 3), dtype=np.uint8)
+def _img(h: int, w: int, mode: str = "RGB") -> Image.Image:
+    return Image.new(mode, (w, h))
 
 
 # ---- smart_resize ----
@@ -52,23 +51,20 @@ def test_extreme_ratio_raises():
 
 def test_process_returns_rgb_pil():
     p = Preprocessor(MIN_P, MAX_P)
-    img = p.process(_bgr(300, 400))
+    img = p.process(_img(300, 400))
     assert isinstance(img, Image.Image)
     assert img.mode == "RGB"
 
 
 def test_process_output_within_pixel_budget():
     p = Preprocessor(MIN_P, MAX_P)
-    img = p.process(_bgr(2000, 2000))
+    img = p.process(_img(2000, 2000))
     w, h = img.size
     assert h * w <= MAX_P
 
 
-def test_bgr_to_rgb_channel_swap():
-    # 造一张纯蓝(BGR: B=255) 图，转 RGB 后 R 通道应为 0、B 通道为 255
-    frame = np.zeros((560, 560, 3), np.uint8)
-    frame[:, :, 0] = 255  # BGR 的 B
-    img = Preprocessor(MIN_P, MAX_P).process(frame)
-    arr = np.asarray(img)
-    assert arr[..., 0].max() == 0    # R
-    assert arr[..., 2].min() == 255  # B
+def test_process_converts_non_rgb_to_rgb():
+    # 传入 RGBA / L 等模式应统一转 RGB
+    for mode in ("RGBA", "L", "P"):
+        img = Preprocessor(MIN_P, MAX_P).process(_img(560, 560, mode))
+        assert img.mode == "RGB"

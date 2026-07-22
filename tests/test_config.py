@@ -8,8 +8,8 @@ from altobid.config import ConfigNode, load_config
 
 def test_load_default():
     cfg = load_config()
-    assert cfg.capture.interval_ms == 200
-    assert cfg.change_detect.method in ("absdiff", "phash")
+    assert cfg.server.host == "127.0.0.1"
+    assert cfg.server.port == 8799
     assert cfg.model.max_new_tokens == 64
 
 

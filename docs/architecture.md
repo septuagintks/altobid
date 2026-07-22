@@ -66,8 +66,10 @@ Python 进程里跑。因此拆成两半：
 题干形态差异（来自样本）：
 
 - `box-1`：`<div class="whpdtip" style="display:none"><span>noprompt</span></div>` → **无题干**，纯图算式题。
+- `box-2`：`<div class="whpdtip" style="font-size:19.5px">请输入"飞机"图标下方数字中的三位彩色数字</div>` → 有题干，且直接是文本节点（无 `<span>`）。
 - `box-3`：`<div class="whpdtip"><span>请输入四位图形校验码</span></div>` → 有题干。
-- `site1`：`<div class="whpdtip" style="font-size:19.5px">请输入"飞机"图标下方数字中的三位彩色数字</div>` → 有题干，且直接是文本节点（无 `<span>`）。
+
+（`site1.html` 是宿主整页，出价弹窗由页面 JS 动态注入，静态 HTML 中不含 `.whSetPriceD`。）
 
 因此题干提取需：取 `.whpdtip` 的 `textContent` 去空白；若元素隐藏或文本等于 `noprompt`
 则视为无题干。

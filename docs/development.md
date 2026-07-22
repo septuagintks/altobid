@@ -139,22 +139,23 @@ curl -X POST http://127.0.0.1:8799/solve \
 
 #### 4.0 样本差异与适配策略
 
-对比 `box-1` / `box-3` / `site1` 三份样本，同类元素的写法并不一致：
+对比 `box-1` / `box-2` / `box-3` 三份弹窗样本（`site1.html` 是宿主整页，弹窗由 JS 注入），
+同类元素的写法并不一致：
 
-| 维度 | box-1（纯图算式） | box-3（图形校验码） | site1（彩色数字） | 适配做法 |
+| 维度 | box-1（纯图算式） | box-2（彩色数字） | box-3（图形校验码） | 适配做法 |
 | --- | --- | --- | --- | --- |
-| 题干节点 | `display:none` + `<span>noprompt</span>` | 可见 `<span>请输入四位图形校验码</span>` | 可见**纯文本节点**（无 span）+ 内联 `font-size` | 取 `.whpdtip` 的 `textContent().trim()`，不假设有 `<span>` |
-| 题干含义 | 隐藏/`noprompt` → 无题干 | 有题干 | 有题干 | 隐藏或文本 `=== 'noprompt'` 视为空 prompt |
-| 图片容器 | `whpdCapItem whpdCapItem-captcha-box` | `whpdCapItem whpdCapLeft` | `whpdCapItem1 whpdCapItem-captcha-box` | **不依赖容器 class**，直接 `img.pricecaptcha` |
-| 图片 src | 绝对 OSS URL | 相对路径 `inputvercode/demo009.png` | URL-encoded 绝对 URL | 用 `img.src`（浏览器已解析为绝对 URL） |
-| 输入容器 | `whpdCapItem-noprompt` | `whpdCapRight` | `whpdCapItem-noprompt` | **不依赖容器 class**，直接 `#bidprice` |
-| 按钮区 | `whpdBtnbox` | `whpdBtnbox` | `whpdBtnbox1` + 内联 `onclick` | 不涉及（只回填不提交） |
+| 题干节点 | `display:none` + `<span>noprompt</span>` | 可见**纯文本节点**（无 span）+ 内联 `font-size` | 可见 `<span>请输入四位图形校验码</span>` | 取 `.whpdtip` 的 `textContent().trim()`，不假设有 `<span>` |
+| 题干含义 | 隐藏/`noprompt` → 无题干 | 有题干（挑三位彩色数字） | 有题干 | 隐藏或文本 `=== 'noprompt'` 视为空 prompt |
+| 图片容器 | `whpdCapItem whpdCapItem-captcha-box` | `whpdCapItem1 whpdCapItem-captcha-box` | `whpdCapItem whpdCapLeft` | **不依赖容器 class**，直接 `img.pricecaptcha` |
+| 图片 src | 绝对 OSS URL | URL-encoded 绝对 URL | 相对路径 `inputvercode/demo009.png` | 用 `img.src`（浏览器已解析为绝对 URL） |
+| 输入容器 | `whpdCapItem-noprompt` | `whpdCapItem-noprompt` | `whpdCapRight` | **不依赖容器 class**，直接 `#bidprice` |
+| 按钮区 | `whpdBtnbox` | `whpdBtnbox1` + 内联 `onclick` | `whpdBtnbox` | 不涉及（只回填不提交） |
 
 **原则**：只依赖三个稳定锚点 —— `.whSetPriceD`（弹窗根）、`img.pricecaptcha`（图）、
 `#bidprice`（输入框），外加 `.whpdtip`（题干，可缺失）。容器 class、按钮、`alt`、
 `autocomplete` 等一律不作为定位依据，以吸收目标站的差异。
 
-- **题干取 `textContent` 而非 `innerText`**：`site1` 的文字是裸文本节点，且要能读到隐藏元素
+- **题干取 `textContent` 而非 `innerText`**：`box-2` 的文字是裸文本节点，且要能读到隐藏元素
   （`display:none` 时 `innerText` 为空，`textContent` 仍有值），据此判断是否 `noprompt`。
 - **src 用 `img.src` 属性**：DOM 属性读出来是浏览器解析后的绝对 URL，`box-3` 的相对路径
   也会补全为完整地址，`GM_xmlhttpRequest` 才能取到。

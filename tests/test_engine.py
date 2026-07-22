@@ -32,6 +32,14 @@ def test_dummy_mode_when_no_weights(dummy_image, tmp_path):
     assert result == "42"
 
 
+def test_infer_accepts_optional_prompt(dummy_image, tmp_path):
+    """infer 接受可选题干 prompt，非空/空/None 都不崩。"""
+    engine = InferenceEngine(str(tmp_path / "nonexistent"))
+    assert engine.infer(dummy_image, "请输入四位图形校验码") == "42"
+    assert engine.infer(dummy_image, "") == "42"
+    assert engine.infer(dummy_image, None) == "42"
+
+
 # ---- 真实推理测试（需要 torch + 权重） ----
 
 

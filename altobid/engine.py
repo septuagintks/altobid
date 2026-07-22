@@ -20,9 +20,10 @@ if TYPE_CHECKING:
 log = get_logger("engine")
 
 DEFAULT_SYSTEM_PROMPT = (
-    "你是一个只解答图片中算式的助手。只输出最终数字答案，不要任何解释、单位或标点。"
+    "你是一个网页验证码识别助手。仔细看图并按要求作答，"
+    "只输出最终答案，不要解释过程、不要单位符号、不要标点。"
 )
-DEFAULT_USER_PROMPT = "计算图中的算式，直接给出答案。"
+DEFAULT_USER_PROMPT = "识别并回答图中的问题，直接给出答案。"
 
 # dtype 字符串到 torch dtype 的归一化映射
 _DTYPE_ALIASES = {
@@ -194,28 +195,36 @@ class InferenceEngine:
 
     # ---- 推理 --------------------------------------------------------------
 
-    def _build_messages(self, image: "Image.Image") -> list[dict]:
+    def _build_messages(self, image: "Image.Image", prompt: str) -> list[dict]:
         return [
             {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image},
-                    {"type": "text", "text": self.user_prompt},
+                    {"type": "text", "text": prompt},
                 ],
             },
         ]
 
-    def infer(self, image: "Image.Image") -> str:
-        """推理单张图片，返回模型输出文本。"""
+    def infer(self, image: "Image.Image", prompt: Optional[str] = None) -> str:
+        """推理单张图片，返回模型输出文本。
+
+        Args:
+            image: 待识别图片。
+            prompt: 题干文本（来自页面）。非空时作为 user prompt，
+                让模型知道「要答什么」；为空/None 时用默认 user_prompt（纯图题兜底）。
+        """
+        user_prompt = prompt.strip() if prompt and prompt.strip() else self.user_prompt
+
         if self.model is None:
-            log.debug("假推理模式，返回占位答案")
+            log.debug("假推理模式，返回占位答案（prompt=%r）", user_prompt)
             return "42"
 
         import torch
         from qwen_vl_utils import process_vision_info
 
-        messages = self._build_messages(image)
+        messages = self._build_messages(image, user_prompt)
 
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
