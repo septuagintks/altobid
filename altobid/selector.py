@@ -39,8 +39,8 @@ class RegionSelector:
         # 框选后回调 callback(bbox)，并显示可调整的框线
     """
 
-    _OVERLAY_ALPHA = 0.3  # 框选时覆盖层透明度
-    _FRAME_ALPHA = 0.6    # 常驻框线透明度
+    _OVERLAY_ALPHA = 0.3       # 框选时覆盖层透明度
+    _KEY_COLOR = "#010101"     # 透明色键（近黑，极不可能与边框冲突）
     _RECT_COLOR = "#00ff88"
     _RECT_WIDTH = 2
     _HANDLE_SIZE = 8
@@ -58,6 +58,7 @@ class RegionSelector:
         self._callback: Optional[Callable[[BBox], None]] = None
         self._listener: Optional[keyboard.GlobalHotKeys] = None
         self._keyboard_listener: Optional[keyboard.Listener] = None
+        self._tk_root: Optional[tk.Tk] = None
 
         # 临时框选窗口（全屏覆盖层）
         self._overlay_root: Optional[tk.Tk] = None
@@ -84,10 +85,10 @@ class RegionSelector:
         self._start_keyboard_listener()  # 监听 Ctrl 按键
         log.info("静默启动，按 %s 触发框选", self._hotkey)
 
-        # 创建隐藏的 root 维持 Tkinter 主循环
-        root = tk.Tk()
-        root.withdraw()  # 不显示
-        root.mainloop()
+        # 创建隐藏的 root 维持 Tkinter 主循环；所有 Tk 操作都在此线程执行
+        self._tk_root = tk.Tk()
+        self._tk_root.withdraw()  # 不显示
+        self._tk_root.mainloop()
 
     def _start_hotkey_listener(self) -> None:
         """启动全局热键监听（独立线程）。"""
@@ -95,26 +96,34 @@ class RegionSelector:
         self._listener.start()
 
     def _start_keyboard_listener(self) -> None:
-        """监听 Ctrl 按键（独立线程）。"""
+        """监听 Ctrl 按键（独立线程）。回调经 after 调度回 Tk 主线程。"""
         def on_press(key):
             if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
-                self._on_ctrl(True)
+                self._marshal(lambda: self._on_ctrl(True))
 
         def on_release(key):
             if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
-                self._on_ctrl(False)
+                self._marshal(lambda: self._on_ctrl(False))
 
         self._keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         self._keyboard_listener.start()
 
+    def _marshal(self, fn: Callable[[], None]) -> None:
+        """把 Tk 操作调度到主循环线程执行（Tkinter 非线程安全）。"""
+        if self._tk_root is not None:
+            try:
+                self._tk_root.after(0, fn)
+            except RuntimeError:
+                pass  # 主循环已退出
+
     def _trigger_select(self) -> None:
-        """热键触发：弹出全屏覆盖层开始框选。"""
-        if self._overlay_root is None:
-            # 在主线程创建窗口
-            threading.Thread(target=self._show_overlay, daemon=True).start()
+        """热键触发（来自监听线程）：调度到主线程弹出覆盖层。"""
+        self._marshal(self._show_overlay)
 
     def _show_overlay(self) -> None:
-        """显示全屏覆盖层（独立 Tkinter 实例）。"""
+        """显示全屏覆盖层（在 Tk 主线程执行）。"""
+        if self._overlay_root is not None:
+            return  # 已在框选中，忽略重复触发
         overlay = tk.Toplevel()
         overlay.overrideredirect(True)
         overlay.geometry(
@@ -130,7 +139,7 @@ class RegionSelector:
         canvas.bind("<ButtonPress-1>", lambda e: self._on_overlay_press(e, canvas))
         canvas.bind("<B1-Motion>", lambda e: self._on_overlay_drag(e, canvas))
         canvas.bind("<ButtonRelease-1>", lambda e: self._on_overlay_release(e, canvas, overlay))
-        overlay.bind("<Escape>", lambda e: overlay.destroy())
+        overlay.bind("<Escape>", lambda e: self._close_overlay())
 
         overlay.focus_force()
 
@@ -141,6 +150,19 @@ class RegionSelector:
         self._rect_id = None
 
         log.info("框选模式：拖拽框出区域，Esc 取消")
+
+    def _close_overlay(self) -> None:
+        """销毁覆盖层并复位状态，保证后续可再次触发框选。"""
+        if self._overlay_root is not None:
+            try:
+                self._overlay_root.destroy()
+            except tk.TclError:
+                pass
+        self._overlay_root = None
+        self._overlay_canvas = None
+        self._selecting = False
+        self._start = None
+        self._rect_id = None
 
     def _on_overlay_press(self, event: "tk.Event", canvas: tk.Canvas) -> None:
         self._start = (event.x, event.y)
@@ -162,7 +184,7 @@ class RegionSelector:
 
     def _on_overlay_release(self, event: "tk.Event", canvas: tk.Canvas, overlay: tk.Toplevel) -> None:
         if self._start is None:
-            overlay.destroy()
+            self._close_overlay()
             return
 
         x0, y0 = self._start
@@ -172,9 +194,7 @@ class RegionSelector:
 
         if width < 5 or height < 5:
             log.warning("框选区域过小，忽略")
-            overlay.destroy()
-            self._overlay_root = None
-            self._selecting = False
+            self._close_overlay()
             return
 
         # 转换为绝对屏幕坐标
@@ -184,9 +204,7 @@ class RegionSelector:
         bottom = top + height
 
         self._region = (left, top, right, bottom)
-        overlay.destroy()
-        self._overlay_root = None
-        self._selecting = False
+        self._close_overlay()
 
         log.info("框选完成: (%d,%d,%d,%d)", left, top, right, bottom)
 
@@ -195,37 +213,56 @@ class RegionSelector:
         self._notify_region()
 
     def _show_frame(self) -> None:
-        """显示常驻框线窗口（仅边框，无背景）。"""
+        """显示/更新常驻框线：仅绿色边框，框内透明可见可穿透。"""
         if self._region is None:
             return
+        self._ensure_frame_window()
+        self._update_frame()
 
-        # 销毁旧框线
+    def _ensure_frame_window(self) -> None:
+        """惰性创建框线窗口（只建一次，之后复用，避免拖动时销毁重建闪烁）。"""
         if self._frame_root is not None:
-            try:
-                self._frame_root.destroy()
-            except:
-                pass
-
-        left, top, right, bottom = self._region
-        width = right - left
-        height = bottom - top
+            return
 
         frame = tk.Toplevel()
         frame.overrideredirect(True)
-        frame.geometry(f"{width}x{height}+{left}+{top}")
-        frame.attributes("-alpha", self._FRAME_ALPHA)
         frame.attributes("-topmost", True)
-        frame.configure(bg="black")
+        frame.configure(bg=self._KEY_COLOR)
+        # 用透明色键：与 _KEY_COLOR 相同的像素完全透明且可穿透，
+        # 只有绿色边框/角柄是实心可见的，框内可看清验证码。
+        try:
+            frame.attributes("-transparentcolor", self._KEY_COLOR)
+        except tk.TclError:
+            log.warning("当前平台不支持 -transparentcolor，框内可能不透明")
 
-        # Windows 鼠标穿透
-        self._set_transparent_to_mouse(frame, True)
-
-        canvas = tk.Canvas(frame, bg="black", highlightthickness=0)
+        canvas = tk.Canvas(frame, bg=self._KEY_COLOR, highlightthickness=0)
         canvas.pack(fill="both", expand=True)
 
-        # 绘制边框 + 四角拖拽柄
+        canvas.bind("<ButtonPress-1>", self._on_frame_press)
+        canvas.bind("<B1-Motion>", self._on_frame_drag)
+        canvas.bind("<ButtonRelease-1>", self._on_frame_release)
+        canvas.bind("<Motion>", self._on_frame_motion)
+
+        self._frame_root = frame
+        self._frame_canvas = canvas
+        # 初始鼠标穿透（未按 Ctrl 时边框也不挡点击）
+        self._set_transparent_to_mouse(frame, True)
+        log.info("框线已显示，按住 Ctrl 可调整")
+
+    def _update_frame(self) -> None:
+        """按 self._region 更新框线窗口几何与画布内容（不重建窗口）。"""
+        if self._frame_root is None or self._frame_canvas is None or self._region is None:
+            return
+        left, top, right, bottom = self._region
+        width = max(1, right - left)
+        height = max(1, bottom - top)
+
+        self._frame_root.geometry(f"{width}x{height}+{left}+{top}")
+
+        canvas = self._frame_canvas
+        canvas.delete("all")
         canvas.create_rectangle(
-            0, 0, width, height,
+            1, 1, width - 1, height - 1,
             outline=self._RECT_COLOR, width=self._RECT_WIDTH,
         )
         hs = self._HANDLE_SIZE
@@ -234,17 +271,6 @@ class RegionSelector:
                 cx - hs // 2, cy - hs // 2, cx + hs // 2, cy + hs // 2,
                 fill=self._RECT_COLOR, outline="",
             )
-
-        # 绑定鼠标事件（仅在 Ctrl 按下时响应）
-        canvas.bind("<ButtonPress-1>", self._on_frame_press)
-        canvas.bind("<B1-Motion>", self._on_frame_drag)
-        canvas.bind("<ButtonRelease-1>", self._on_frame_release)
-        canvas.bind("<Motion>", self._on_frame_motion)
-
-        self._frame_root = frame
-        self._frame_canvas = canvas
-
-        log.info("框线已显示，按住 Ctrl 可调整")
 
     def _set_transparent_to_mouse(self, window: tk.Tk, transparent: bool) -> None:
         """设置窗口鼠标穿透（Windows）。"""
@@ -276,21 +302,23 @@ class RegionSelector:
         width = right - left
         height = bottom - top
 
-        # 检查角柄
+        # 角柄命中用画布相对坐标（按下瞬间窗口未动，坐标准确）
         corner = self._hit_test_corner(event.x, event.y, 0, 0, width, height)
+        # 拖动位移用屏幕绝对坐标 x_root/y_root，不受窗口随拖动移动的影响，避免抖动
         if corner:
             self._resize_corner = corner
-            self._drag_start = (event.x, event.y)
+            self._drag_start = (event.x_root, event.y_root)
         elif 0 <= event.x <= width and 0 <= event.y <= height:
             self._dragging = True
-            self._drag_start = (event.x, event.y)
+            self._drag_start = (event.x_root, event.y_root)
 
     def _on_frame_drag(self, event: "tk.Event") -> None:
         if not self._ctrl_pressed or self._drag_start is None or self._region is None:
             return
 
-        dx = event.x - self._drag_start[0]
-        dy = event.y - self._drag_start[1]
+        # 用屏幕绝对坐标算增量，稳定不抖
+        dx = event.x_root - self._drag_start[0]
+        dy = event.y_root - self._drag_start[1]
         left, top, right, bottom = self._region
 
         if self._resize_corner:
@@ -308,14 +336,13 @@ class RegionSelector:
                 right += dx
                 bottom += dy
             self._region = (left, top, right, bottom)
-            self._drag_start = (event.x, event.y)
         elif self._dragging:
             # 拖动整体
             width = right - left
             height = bottom - top
             self._region = (left + dx, top + dy, left + dx + width, top + dy + height)
-            self._drag_start = (event.x, event.y)
 
+        self._drag_start = (event.x_root, event.y_root)
         self._show_frame()
 
     def _on_frame_release(self, event: "tk.Event") -> None:

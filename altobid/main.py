@@ -38,17 +38,41 @@ def _signal_handler(signum, frame) -> None:
     _stop_event.set()
 
 
+def _enable_dpi_awareness() -> None:
+    """让进程 DPI 感知，保证 Tkinter 坐标与 mss 物理像素一致（Windows）。
+
+    否则在缩放（如 150%）下框线窗口会相对截图区域向左上偏移。
+    必须在创建任何 Tk 窗口之前调用。
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        # PROCESS_PER_MONITOR_DPI_AWARE = 2
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception as e:
+            log.warning("设置 DPI 感知失败: %s", e)
+
+
 def capture_loop(
     bbox: BBox,
     detector: ChangeDetector,
     debouncer: Debouncer,
     frame_queue: "queue.Queue[np.ndarray]",
     interval_s: float,
+    stop: threading.Event,
 ) -> None:
-    """采集循环：截图 -> 变化检测 -> 防抖 -> 入队。"""
+    """采集循环：截图 -> 变化检测 -> 防抖 -> 入队。
+
+    stop: 本采集会话的停止信号，区域变更时由 on_region_ready 置位以退出旧线程。
+    """
     log.info("采集线程启动，监控区域: %s", bbox)
     with Capturer(bbox) as capturer:
-        while not _stop_event.is_set():
+        while not _stop_event.is_set() and not stop.is_set():
             try:
                 frame = capturer.grab()
                 # 仅当相对基准发生变化时，才交给防抖累积稳定
@@ -164,6 +188,8 @@ def main() -> int:
     setup_logging(level=Config.logging.level, log_file=Config.logging.file)
     log.info("altobid 启动")
 
+    _enable_dpi_awareness()  # 必须在建任何窗口前
+
     signal.signal(signal.SIGINT, _signal_handler)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _signal_handler)
@@ -200,23 +226,37 @@ def main() -> int:
     )
     inference_thread.start()
 
-    # 3. 采集线程容器（在框选回调中启动）
+    # 3. 采集线程容器（在框选回调中启动/重启）
     capture_thread: Optional[threading.Thread] = None
+    capture_stop: Optional[threading.Event] = None
     capture_lock = threading.Lock()
 
     def on_region_ready(bbox: BBox) -> None:
-        """框选完成回调：启动或重启采集线程。"""
-        nonlocal capture_thread
+        """框选完成或框体调整回调：停掉旧采集线程，重置基准，起新线程。
+
+        注意：本函数可能被 selector 从后台线程调用，会短暂 join 旧线程，
+        故不应在 Tk 事件线程内直接调用（selector 已用独立线程包裹）。
+        """
+        nonlocal capture_thread, capture_stop
         with capture_lock:
-            # 停止旧采集线程
+            # 1) 停止旧采集线程并等待退出，避免多线程同时抓屏、踩 detector 状态
+            if capture_stop is not None:
+                capture_stop.set()
             if capture_thread is not None and capture_thread.is_alive():
-                log.info("区域变更，重启采集线程")
-                # 这里简化：直接丢弃旧线程，让它自然退出（下次 grab 会失败）
-            # 启动新采集线程
+                capture_thread.join(timeout=2.0)
+                if capture_thread.is_alive():
+                    log.warning("旧采集线程未在 2s 内退出，继续启动新线程")
+
+            # 2) 区域已变，重置变化检测基准与防抖，新区域从干净状态开始
+            detector.reset()
+            debouncer.reset()
+
+            # 3) 启动新采集线程
+            capture_stop = threading.Event()
             interval_s = Config.capture.interval_ms / 1000.0
             capture_thread = threading.Thread(
                 target=capture_loop,
-                args=(bbox, detector, debouncer, frame_queue, interval_s),
+                args=(bbox, detector, debouncer, frame_queue, interval_s, capture_stop),
                 daemon=True,
             )
             capture_thread.start()
