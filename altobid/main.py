@@ -18,6 +18,7 @@ from . import get_logger, setup_logging
 from .capture import Capturer
 from .change_detect import ChangeDetector, Debouncer
 from .config import Config
+from .debug import FrameSaver
 from .engine import InferenceEngine
 from .output import OutputHandler
 from .postprocess import PostProcessor
@@ -86,6 +87,7 @@ def inference_loop(
     postprocessor: PostProcessor,
     output_handler: OutputHandler,
     detector: ChangeDetector,
+    frame_saver: FrameSaver,
 ) -> None:
     """推理循环：出队 -> 预处理 -> 推理 -> 后处理 -> 输出 -> 更新基准。"""
     log.info("推理线程启动")
@@ -95,12 +97,22 @@ def inference_loop(
         except queue.Empty:
             continue
         try:
+            t0 = time.perf_counter()
             image = preprocessor.process(frame)
+            t1 = time.perf_counter()
             raw = engine.infer(image)
+            t2 = time.perf_counter()
             answer = postprocessor.clean(raw)
             output_handler.output(answer)
             # 提交后更新基准：冷却期后同一验证码不再重复推理
             detector.update(frame)
+            frame_saver.save(frame, answer)
+            log.info(
+                "延迟: 预处理 %.0fms + 推理 %.0fms = 总 %.0fms",
+                (t1 - t0) * 1000,
+                (t2 - t1) * 1000,
+                (time.perf_counter() - t0) * 1000,
+            )
         except Exception as e:
             log.error("推理循环异常: %s", e, exc_info=True)
     log.info("推理线程退出")
@@ -175,6 +187,9 @@ def main() -> int:
     ) = _build_components()
 
     # 3. 队列 + 推理线程
+    frame_saver = FrameSaver(
+        enabled=Config.debug.save_frames, out_dir=Config.debug.frames_dir
+    )
     frame_queue: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=1)
     inference_thread = threading.Thread(
         target=inference_loop,
@@ -185,6 +200,7 @@ def main() -> int:
             postprocessor,
             output_handler,
             detector,
+            frame_saver,
         ),
         daemon=True,
     )
