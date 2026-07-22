@@ -57,23 +57,24 @@ python -m altobid.main
 
 ### 配置
 
-创建 `config.local.yaml`（覆盖默认配置）：
+复制 [config.example.yaml](config.example.yaml) 为 `config/local.yaml`，只写需要覆盖的项即可
+（完整默认值见 [config/default.yaml](config/default.yaml)）：
 
 ```yaml
 model:
-  path: "Qwen/Qwen2.5-VL-3B-Instruct-AWQ"  # 或本地路径
-  dtype: "fp16"  # 或 "bf16"（Ada/Ampere 推荐）
+  path: ./models/Qwen2.5-VL-3B-Instruct-AWQ  # 本地权重目录或 HF 名称
+  dtype: fp16          # fp16 / bf16 / fp32
   max_new_tokens: 64
 
 change_detect:
-  method: "absdiff"  # 或 "phash"
+  method: absdiff      # absdiff / phash
   change_threshold: 0.02
   stable_frames: 3
-  cooldown: 2.0
+  cooldown_s: 1.5
 
 output:
-  show_window: true  # 是否弹窗显示答案
-  window_duration: 3000  # 弹窗持续时间（毫秒）
+  show_window: true    # 是否弹窗显示答案
+  window_duration_ms: 3000
 ```
 
 ## 测试

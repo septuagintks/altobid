@@ -40,7 +40,7 @@ class RegionSelector:
 
     def __init__(self) -> None:
         # 虚拟屏原点（可能为负），拖拽坐标需据此换算为绝对屏幕坐标
-        with mss.mss() as sct:
+        with mss.MSS() as sct:
             virtual = sct.monitors[0]
         self._origin_left = int(virtual["left"])
         self._origin_top = int(virtual["top"])

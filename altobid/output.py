@@ -1,20 +1,9 @@
-"""输出处理：悬浮窗 + 控制台 + 日志。
-
-支持三种输出方式：
-1. Tkinter 悬浮窗（可选，配置中 output.show_window 控制）
-2. 控制台打印（彩色）
-3. 日志记录
-"""
+"""输出处理：控制台 + 日志 + 可选剪贴板 + 可选悬浮窗。"""
 from __future__ import annotations
 
-import sys
 import tkinter as tk
-from typing import TYPE_CHECKING
 
 from . import get_logger
-
-if TYPE_CHECKING:
-    pass
 
 log = get_logger("output")
 
@@ -24,46 +13,64 @@ RESET = "\033[0m"
 
 
 class OutputHandler:
-    """处理推理结果输出：悬浮窗 + 控制台 + 日志。"""
+    """处理推理结果输出：控制台 + 日志 + 剪贴板 + 悬浮窗。"""
 
-    def __init__(self, show_window: bool = True, window_duration: int = 3000) -> None:
+    def __init__(
+        self,
+        show_window: bool = False,
+        copy_to_clipboard: bool = True,
+        window_duration_ms: int = 3000,
+    ) -> None:
         self.show_window = show_window
-        self.window_duration = window_duration
+        self.copy_to_clipboard = copy_to_clipboard
+        self.window_duration_ms = window_duration_ms
 
     def output(self, answer: str) -> None:
-        """输出答案到各个通道。"""
-        # 控制台（彩色）
+        """输出答案到各通道。"""
         print(f"{GREEN}答案: {answer}{RESET}", flush=True)
-
-        # 日志
         log.info("答案: %s", answer)
 
-        # 悬浮窗（可选）
+        if self.copy_to_clipboard:
+            self._copy(answer)
         if self.show_window:
             self._show_popup(answer)
 
+    def _copy(self, text: str) -> None:
+        """复制到剪贴板（pyperclip 可选，缺失则用 tkinter 兜底）。"""
+        try:
+            import pyperclip
+
+            pyperclip.copy(text)
+            log.debug("已复制到剪贴板 (pyperclip)")
+            return
+        except ImportError:
+            pass
+        # tkinter 兜底
+        try:
+            r = tk.Tk()
+            r.withdraw()
+            r.clipboard_clear()
+            r.clipboard_append(text)
+            r.update()  # 保证写入生效
+            r.destroy()
+            log.debug("已复制到剪贴板 (tkinter)")
+        except Exception as e:
+            log.warning("复制剪贴板失败: %s", e)
+
     def _show_popup(self, text: str) -> None:
-        """显示悬浮窗，自动关闭。"""
+        """悬浮窗展示答案，到时自动关闭。"""
         root = tk.Tk()
         root.title("验证码答案")
-        root.attributes("-topmost", True)  # 置顶
+        root.attributes("-topmost", True)
 
-        # 窗口居中
         width, height = 300, 100
         x = (root.winfo_screenwidth() - width) // 2
         y = (root.winfo_screenheight() - height) // 2
         root.geometry(f"{width}x{height}+{x}+{y}")
 
-        # 内容
-        label = tk.Label(
-            root,
-            text=f"答案: {text}",
-            font=("Arial", 24, "bold"),
-            fg="#C4612F",  # 赤土色（与 design_sense 一致）
-        )
-        label.pack(expand=True)
+        tk.Label(
+            root, text=f"答案: {text}", font=("Arial", 24, "bold"), fg="#C4612F"
+        ).pack(expand=True)
 
-        # 自动关闭
-        root.after(self.window_duration, root.destroy)
-
+        root.after(self.window_duration_ms, root.destroy)
         root.mainloop()

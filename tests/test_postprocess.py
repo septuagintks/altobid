@@ -47,8 +47,16 @@ def test_passthrough_clean_answer(cleaner):
 
 
 def test_output_handler_console_only(capsys):
-    """控制台输出（不开窗口避免阻塞测试）。"""
-    handler = OutputHandler(show_window=False)
+    """控制台输出（不开窗口、不复制，避免阻塞/副作用）。"""
+    handler = OutputHandler(show_window=False, copy_to_clipboard=False)
     handler.output("42")
     captured = capsys.readouterr()
     assert "答案: 42" in captured.out
+
+
+def test_output_handler_clipboard(capsys):
+    """剪贴板复制不应抛异常（tkinter 兜底）。"""
+    handler = OutputHandler(show_window=False, copy_to_clipboard=True)
+    handler.output("99")  # 不崩即通过
+    captured = capsys.readouterr()
+    assert "答案: 99" in captured.out

@@ -40,7 +40,7 @@ class Capturer:
 
     def _ensure(self) -> "mss.base.MSSBase":
         if self._sct is None:
-            self._sct = mss.mss()
+            self._sct = mss.MSS()
             log.debug("mss 实例已在当前线程创建, bbox=%s", self._bbox)
         return self._sct
 

@@ -30,6 +30,7 @@ model:
 output:
   copy_to_clipboard: true
   show_window: false        # 是否弹悬浮窗展示答案
+  window_duration_ms: 3000  # 悬浮窗自动关闭时长（毫秒）
 
 logging:
   level: INFO               # DEBUG | INFO | WARNING | ERROR

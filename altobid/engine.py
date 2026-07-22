@@ -2,14 +2,15 @@
 
 支持：
 - Flash Attention 2 探测回退（装不上自动降 sdpa）
-- AWQ/GPTQ 量化权重
-- CPU/GPU 自适应（无 CUDA 或权重缺失时降级到 CPU + 假推理）
+- AWQ/GPTQ 量化权重（由权重目录自身的 config 决定，无需额外指定）
+- CPU/GPU 自适应
+- 权重/依赖缺失时降级到假推理（返回占位，便于无 GPU 环境跑通流程与测试）
 """
 from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from . import get_logger
 
@@ -18,15 +19,21 @@ if TYPE_CHECKING:
 
 log = get_logger("engine")
 
-# 推理提示词：零样本、简洁输出
-PROMPT = """这是一道小学数学题验证码，请仔细观察图片中的题目并计算答案。
+DEFAULT_SYSTEM_PROMPT = (
+    "你是一个只解答图片中算式的助手。只输出最终数字答案，不要任何解释、单位或标点。"
+)
+DEFAULT_USER_PROMPT = "计算图中的算式，直接给出答案。"
 
-要求：
-1. 只输出最终数字答案，不要解释过程
-2. 如果是选择题，输出选项字母（A/B/C/D）
-3. 如果题目不清晰或无法识别，输出"无法识别"
-
-答案："""
+# dtype 字符串到 torch dtype 的归一化映射
+_DTYPE_ALIASES = {
+    "fp16": "float16",
+    "float16": "float16",
+    "half": "float16",
+    "bf16": "bfloat16",
+    "bfloat16": "bfloat16",
+    "fp32": "float32",
+    "float32": "float32",
+}
 
 
 class InferenceEngine:
@@ -35,22 +42,32 @@ class InferenceEngine:
     def __init__(
         self,
         model_path: str,
-        dtype: str = "float16",
+        dtype: str = "fp16",
         max_new_tokens: int = 64,
         temperature: float = 0.1,
         top_p: float = 0.8,
+        min_pixels: Optional[int] = None,
+        max_pixels: Optional[int] = None,
+        system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        user_prompt: str = DEFAULT_USER_PROMPT,
     ) -> None:
         self.model_path = Path(model_path)
-        self.dtype = dtype
+        self.dtype = _DTYPE_ALIASES.get(dtype.lower(), "float16")
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.top_p = top_p
+        self.min_pixels = min_pixels
+        self.max_pixels = max_pixels
+        self.system_prompt = system_prompt
+        self.user_prompt = user_prompt
 
         self.model = None
         self.processor = None
-        self.device = None
+        self.device: Optional[str] = None
 
         self._load_model()
+
+    # ---- 加载 --------------------------------------------------------------
 
     def _detect_attn_implementation(self) -> str:
         """探测 Flash Attention 2，装不上回退到 sdpa。"""
@@ -63,19 +80,25 @@ class InferenceEngine:
             log.info("未检测到 flash-attn，回退到 sdpa")
             return "sdpa"
 
+    def _resolve_model_class(self):
+        """返回 Qwen2.5-VL 模型类；老版本 transformers 回退到通用类。"""
+        try:
+            from transformers import Qwen2_5_VLForConditionalGeneration
+
+            return Qwen2_5_VLForConditionalGeneration
+        except ImportError:
+            from transformers import AutoModelForImageTextToText
+
+            log.warning(
+                "transformers 无 Qwen2_5_VL 类（版本偏旧），回退 AutoModelForImageTextToText"
+            )
+            return AutoModelForImageTextToText
+
     def _load_model(self) -> None:
-        """加载模型和 processor，异常时降级。"""
+        """加载模型和 processor，异常时降级到假推理。"""
         try:
             import torch
-            from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
-
-            if not torch.cuda.is_available():
-                log.warning("CUDA 不可用，降级到 CPU（推理会很慢）")
-                self.device = "cpu"
-                torch_dtype = torch.float32
-            else:
-                self.device = "cuda"
-                torch_dtype = torch.float16 if self.dtype == "float16" else torch.bfloat16
+            from transformers import AutoProcessor
 
             if not self.model_path.exists():
                 raise FileNotFoundError(
@@ -84,6 +107,14 @@ class InferenceEngine:
                     "  huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct-AWQ "
                     "--local-dir models/Qwen2.5-VL-3B-Instruct-AWQ"
                 )
+
+            if torch.cuda.is_available():
+                self.device = "cuda"
+                torch_dtype = getattr(torch, self.dtype)
+            else:
+                log.warning("CUDA 不可用，降级到 CPU（推理会很慢）")
+                self.device = "cpu"
+                torch_dtype = torch.float32
 
             attn_impl = self._detect_attn_implementation()
 
@@ -95,15 +126,19 @@ class InferenceEngine:
                 attn_impl,
             )
 
-            # 加载 processor（必须先加载，模型初始化可能用到其配置）
-            self.processor = Qwen2VLProcessor.from_pretrained(
-                str(self.model_path), trust_remote_code=True
+            proc_kwargs: dict = {"trust_remote_code": True}
+            if self.min_pixels is not None:
+                proc_kwargs["min_pixels"] = self.min_pixels
+            if self.max_pixels is not None:
+                proc_kwargs["max_pixels"] = self.max_pixels
+            self.processor = AutoProcessor.from_pretrained(
+                str(self.model_path), **proc_kwargs
             )
 
-            # 加载模型
+            model_cls = self._resolve_model_class()
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=FutureWarning)
-                self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+                self.model = model_cls.from_pretrained(
                     str(self.model_path),
                     torch_dtype=torch_dtype,
                     device_map=self.device,
@@ -131,43 +166,43 @@ class InferenceEngine:
         self.device = "dummy"
         log.warning("推理引擎运行在假推理模式（调试/测试用）")
 
-    def infer(self, image: Image.Image, prompt: str = PROMPT) -> str:
+    # ---- 推理 --------------------------------------------------------------
+
+    def _build_messages(self, image: "Image.Image") -> list[dict]:
+        return [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": self.user_prompt},
+                ],
+            },
+        ]
+
+    def infer(self, image: "Image.Image") -> str:
         """推理单张图片，返回模型输出文本。"""
         if self.model is None:
             log.debug("假推理模式，返回占位答案")
             return "42"
 
+        import torch
         from qwen_vl_utils import process_vision_info
 
-        # 构建消息
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
+        messages = self._build_messages(image)
 
-        # 应用聊天模板
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+        image_inputs, video_inputs = process_vision_info(messages)
 
-        # 处理图片
-        image_inputs, _ = process_vision_info(messages)
-
-        # Tokenize
         inputs = self.processor(
             text=[text],
             images=image_inputs,
+            videos=video_inputs,
             padding=True,
             return_tensors="pt",
         ).to(self.device)
-
-        # 生成
-        import torch
 
         with torch.inference_mode():
             output_ids = self.model.generate(
@@ -178,13 +213,13 @@ class InferenceEngine:
                 do_sample=self.temperature > 0,
             )
 
-        # 解码（跳过输入 tokens）
-        generated_ids = [
-            oids[len(iids) :]
-            for oids, iids in zip(output_ids, inputs.input_ids, strict=False)
+        # 只解码新生成的部分
+        trimmed = [
+            out[len(inp):]
+            for inp, out in zip(inputs.input_ids, output_ids, strict=False)
         ]
         answer = self.processor.batch_decode(
-            generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )[0]
 
         log.info("推理结果: %s", answer)
