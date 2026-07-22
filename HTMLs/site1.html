@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en" style="overflow: auto; height: 100%;">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="description" content="Web site created using create-react-app">
+    <title>小马哥模拟拍牌系统</title>
+    <style>html {
+        font-size: 100px;
+    }</style>
+    <link href="./public/main_3.css" rel="stylesheet">
+    <script src="./public/jquery.min.js"></script>
+</head>
+<body style="font-size: 100px; font-family: Microsoft YaHei Arial Helvetica sans-serif">
+<!--[if lt IE 10]>
+<style>
+    html,
+    body {
+        overflow: hidden;
+        height: 100%
+        padding: 0;
+    }
+
+    .webmaskie9 {
+        background: #4a4a4a;
+        opacity: .5;
+        display: block;
+        width: 100%;
+        height: 100%;
+        position: fixed;
+        z-index: 1;
+        margin: 0;
+        top: 0;
+        left: 0;
+    }
+
+    .wdComTestie9 {
+        display: block;
+    }
+
+    .wdialogie9 {
+        width: 998px;
+        height: 636px;
+        position: absolute;
+        background: #fff;
+        font-size: 20px;
+        color: #2854b2;
+        top: 200px;
+        left: 50%;
+        margin-left: -499px;
+        z-index: 9;
+    }
+
+    .wdtitleie9 {
+        font-size: 28px;
+        font-weight: 700;
+        text-align: center;
+        margin-top: 20px;
+        height: 80px;
+        line-height: 80px;
+    }
+
+    .wdcontentie9 {
+        width: 100%;
+        height: 420px;
+    }
+
+    .wdframeie9 {
+        width: 904px;
+        margin: 0 auto;
+        border-top: 1px solid #7590c1;
+        height: 420px;
+    }
+
+    .wTestResultie9 {
+        text-align: center;
+        font-size: 24px;
+        font-weight: 700;
+        height: 90px;
+        line-height: 90px;
+    }
+
+    .bg-wrongie9 {
+
+
+        color: red;
+    }
+
+    .wTestTipie9 {
+        font-size: 18px;
+        line-height: 150%;
+        text-indent: 40px;
+    }
+
+    .browerTestBoxie9 {
+        margin-top: 20px;
+    }
+
+    .ibg-wrongie9 {
+
+        background-size: 26px 26px;
+    }
+
+    .browerinfoie9 {
+        color: #4a4a4a;
+        padding-left: 50px;
+        font-size: 20px;
+    }
+
+    .browerinfotipie9 {
+        margin-top: 20px;
+    }
+</style>
+<div class="webmaskie9"></div>
+<div class="wdialogie9 wdComTestie9">
+    <div class="wdtitleie9"><span>兼容性测试</span></div>
+    <div class="wdcontentie9">
+        <div class="wdframeie9">
+            <div class="wdboxie9">
+                <div class="wTestResultie9 bg-wrongie9"><span>浏览器未通过测试</span></div>
+                <div class="wTestTipie9">
+                    <p>额度拍卖友情提示：上海市非营业性客车额度投标拍卖网站将升级SSL证书版本。2019年9月起客车额度投标拍卖系统将不再支持Windows
+                        XP，Windows Server 2003及以下版本的客户端操作系统，提请竞买客户尽早升级操作系统。</p>
+                </div>
+                <div class="browerTestBoxie9">
+                    <div class="browerinfoie9 ibg-wrongie9"><span>您当前的浏览器版本过低，可能存在安全风险</span></div>
+                    <div class="browerinfoie9 browerinfotipie9"><span>推荐使用</span><br><span>edge浏览器，请去官网<a
+                            href="https://support.microsoft.com/zh-cn/help/17621/internet-explorer-downloads"
+                            target="_blank" rel="noopener noreferrer">下载</a></span><br><span>最新版本的firefox浏览器，请去官网<a
+                            href="http://www.firefox.com.cn/" target="_blank" rel="noopener noreferrer">下载</a> </span><br>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<![endif]-->
+<noscript>You need to enable JavaScript to run this app.</noscript>
+<div id="root">
+    <div class="whomebody wbody" style="padding-top: 6px;">
+        <!--
+          <div class="wlogoutbtn">
+            <span>退出登录</span></div>-->
+        <div class="whomemain">
+            <div class="whcontent">
+                <div class="whtitlebox">
+                    <div class="whtitle">
+                        <span class="whtitletip"><span style="box-shadow: 0px 1px 16px black;padding:3px 30px 3px 30px">小马哥模拟拍牌系统</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                    </div>
+                </div>
+                <div class="whcardinfo">
+                    <ul>
+                        <li class="whml100 field01">
+                            <span>投标号：</span></li>
+                        <li class="field02">
+                            <span>88888888</span></li>
+                        <li>
+                            <span>客户名称：</span></li>
+                        <li>
+                            <span title="小马哥说沪牌">小马哥说沪牌</span></li>
+                    </ul>
+                    <div class="clear"></div>
+                </div>
+
+                <div class="whbiddingcontent">
+                    <div class="whbiddingitem whbiddingleft">
+                        <div class="whpubinfoTitlebox">
+                            <div class=" whpubinfoTitle whpubinfoTitleConn">
+                                <span>公开信息</span></div>
+                        </div>
+                        <div class="whpubinfo">
+                            <div>
+                                <div class="proinfo red"><span>个人非营业性客车额度拍卖会</span><br><span>投放额度数:<span>13549</span></span><br><span>目前已投标人数:<span>98049</span></span><br><span>拍卖会起止时间:<span>10:30</span>至<span>11:30</span></span><br><span>首次出价时段:<span>10:30</span>至 <span>11:00</span></span><br><span>修改出价时段:<span>11:00</span>至<span>11:30</span></span><br>
+                                </div>
+                                <div class="detail-proinfo secdetail-proinfo"><br><span class="stageTxt">目前为<span>修改出价时段</span></span><br><span>系统目前时间:<span
+                                        class="red">11:29:11</span></span><br><span>目前最低可成交价:<span class="red">92100</span></span><br><span>最低可成交价出价时间:<span
+                                        class="red">2024/04/29 10:30:23</span></span><br><span>目前数据库接受处理价格区间:<span
+                                        class="red">91800至92400</span></span><br></div>
+                            </div>
+                        </div>
+                        <div class="whptipbox">
+                            <span>请尽早出价，避免因网络繁忙拥堵无法成功出价。</span></div>
+                    </div>
+                    <div class="whbiddingitem whbiddingright">
+                        <div class="whbidTitlebox">
+                            <div class="whbidTitle">
+                                <span>投标拍卖</span></div>
+                        </div>
+                        <div class="whbidcontent">
+                            <div class="whsecpro-biddingdialog">
+                                <div class="red lowprice">
+                                    <span>目前最低可成交价：¥92100</span></div>
+                                <div class="whsecpro-content whpricecontent">
+                                    <div class="whcusraise-box">
+                                        <div class="whcusraisetip">
+                                            <span>自定义加价幅度</span></div>
+                                        <div class="whcusraiseinput-box">
+                                            <div class="whcusraiseinput-content">
+                                                <label class="marleft5">+</label>
+                                                <input class="whcusraiseinput whpriceinput" title="" autocomplete="off"
+                                                       pattern="\d{4}" maxlength="4" inputmode="numeric" value=""></div>
+                                        </div>
+                                        <div class="whcusraisebtn-box">
+                                            <div class="whcusraisebtn">
+                                                <span>加价</span></div>
+                                        </div>
+                                        <div class="clear"></div>
+                                    </div>
+                                    <div class="whraise-box">
+                                        <div class="whraiseitem">
+                                            <div class="whritembtn graybg whritembtnsub300">-300</div>
+                                        </div>
+                                        <div class="whraiseitem">
+                                            <div class="whritembtn graybg whritembtnsub200">-200</div>
+                                        </div>
+                                        <div class="whraiseitem">
+                                            <div class="whritembtn graybg whritembtnsub100">-100</div>
+                                        </div>
+                                        <div class="whraiseitem">
+                                            <div class="whritembtn bluebg whritembtnadd100">+100</div>
+                                        </div>
+                                        <div class="whraiseitem">
+                                            <div class="whritembtn bluebg whritembtnadd200">+200</div>
+                                        </div>
+                                        <div class="whraiseitem">
+                                            <div class="whritembtn bluebg whritembtnadd300">+300</div>
+                                        </div>
+                                        <div class="clear"></div>
+                                    </div>
+                                    <div class="whsetprice-box">
+                                        <div class="whsetpricetip">
+                                            <span>自行输入价格</span></div>
+                                        <div class="whsetpriceinput-box">
+                                            <div class="whsetpriceinput-content">
+                                                <input type="tel" title="" autocomplete="off"
+                                                       class="whsetpriceinput whpriceinput" pattern="\d{6}"
+                                                       maxlength="6" inputmode="numeric" value=""></div>
+                                        </div>
+                                        <div class="whsetpricebtn-box">
+                                            <div class="whsetpricebtn">
+                                                <span>出价</span></div>
+                                        </div>
+                                        <div class="clear"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="whmybidcontent">
+                            <div class="whmybidbox">
+                                <div class="whmybidtitile">
+                                    <span>出价情况</span></div>
+                                <div class="whmybidinfo">
+                                    <div class="whmybidinfo">
+                                        <div><span>您第1次出价</span><br><span>出价金额:100</span><br><span>出价时间:2024-04-29 10:30:20</span><br><span>出价方式:网络出价</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="whquerybox">
+                                <div class="whver">
+                      <span>版本：
+                        <span>1.4.1</span></span>
+                                </div>
+                                <div class="whquerybtn">
+                                    <span>查询本人最新出价情况</span></div>
+                                <div class="clear"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="clear"></div>
+            </div>
+        </div>
+        <div class="gpfooter">
+            <span>模拟日期：</span>
+            <select id="changehistory">
+                <option value="random">随机模拟</option>
+                <option value="2404">24年4月</option>
+                <option value="2403">24年3月</option>
+                <option value="2402">24年2月</option>
+                <option value="2401">24年1月</option>
+                <option value="2312">23年12月</option>
+                <option value="2311">23年11月</option>
+                <option value="2310">23年10月</option>
+                <option value="2309">23年9月</option>
+                <option value="2308">23年8月</option>
+
+                <option value="2206">22年6月</option>
+
+                <option value="2205">22年5月</option>
+
+                <option value="2204">22年4月</option>
+
+                <option value="2203">22年3月</option>
+                <option value="2202">22年2月</option>
+
+                <option value="2201">22年1月</option>
+
+                <option value="2112">21年12月</option>
+                <option value="2111">21年11月</option>
+
+                <option value="2110">21年10月</option>
+
+                <option value="2109">21年9月</option>
+
+                <option value="2108">21年8月</option>
+                <option value="2107">21年7月</option>
+
+                <option value="2106">21年6月</option>
+
+                <option value="2105">21年5月</option>
+                <option value="2104">21年4月</option>
+                <option value="2103">21年3月</option>
+
+                <option value="2102">21年2月</option>
+                <option value="2101">21年1月</option>
+                <option value="2012">20年12月</option>
+            </select>
+            <span>&nbsp; &nbsp;2017-2024 ©  All Rights <span id="monitip" title="92900 | 11:29:55 | 11:29:55 | 快">Reserved.</span></span>
+        </div>
+    </div>
+</div>
+<script src="./public/app_100.js"></script>
+
+</body>
+</html>

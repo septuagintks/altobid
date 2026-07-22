@@ -1,0 +1,48 @@
+<div class="whSetPriceD">
+  <div class="whpdTitleBox"><span> 您的出价为：<span>93100</span>元</span></div>
+  <div class="whpdContent">
+    <div class="whpdtip" style="font-size: 19.5px">
+      请输入“飞机”图标下方数字中的三位彩色数字
+    </div>
+    <div class="whpdCapItem1 whpdCapItem-captcha-box">
+      <img
+        src="https://ppjl-yzm.oss-cn-shanghai.aliyuncs.com/%E8%AF%B7%E8%BE%93%E5%85%A5%E2%80%9C%E9%A3%9E%E6%9C%BA%E2%80%9D%E5%9B%BE%E6%A0%87%E4%B8%8B%E6%96%B9%E6%95%B0%E5%AD%97%E4%B8%AD%E7%9A%84%E4%B8%89%E4%BD%8D%E5%BD%A9%E8%89%B2%E6%95%B0%E5%AD%97_684.png"
+        alt="Captcha"
+        class="pricecaptcha"
+        style="width: 264px; height: 121px"
+      />
+    </div>
+    <div class="whpdCapItem1 whpdCapItem-noprompt">
+      <input type="text" title="" id="bidprice" autocomplete="off" value="" />
+    </div>
+    <div class="clear"></div>
+  </div>
+  <div class="whpdBtnbox1">
+    <div
+      style="margin-left: 40px"
+      class="whpdConfirm whpdBtnItem"
+      onclick="
+        YzmClickOK(
+          document.getElementsByClassName('whsetpriceinput whpriceinput')[0]
+            .value,
+          document.getElementById('bidprice').value,
+        );
+        document.getElementsByClassName('whSetPriceD')[0].remove();
+        document.getElementsByClassName('webbidmask')[0].remove();
+      "
+    >
+      <span>确定</span>
+    </div>
+    <div
+      class="whpdCancel whpdBtnItem"
+      style="margin-right: 40px"
+      onclick="
+        document.getElementsByClassName('whSetPriceD')[0].remove();
+        document.getElementsByClassName('webbidmask')[0].remove();
+      "
+    >
+      <span>取消</span>
+    </div>
+    <div class="clear"></div>
+  </div>
+</div>
