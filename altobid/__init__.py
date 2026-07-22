@@ -35,7 +35,16 @@ def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
 
     formatter = logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
 
-    console = logging.StreamHandler(sys.stdout)
+    # Windows 控制台默认 GBK，中文日志会乱码；尽力切到 UTF-8。
+    stream = sys.stdout
+    reconfigure = getattr(stream, "reconfigure", None)
+    if callable(reconfigure):
+        try:
+            reconfigure(encoding="utf-8")
+        except (ValueError, OSError):
+            pass  # 流被重定向/不支持时忽略
+
+    console = logging.StreamHandler(stream)
     console.setFormatter(formatter)
     root.addHandler(console)
 
