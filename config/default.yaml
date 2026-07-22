@@ -1,0 +1,39 @@
+# altobid 默认配置
+# 本地覆盖请写入 config/local.yaml（已 gitignore），仅需覆盖差异项。
+
+capture:
+  interval_ms: 200          # 采集间隔，200ms ≈ 5 FPS
+
+change_detect:
+  method: absdiff           # absdiff | phash
+  downscale: 64             # 变化检测前缩放到的边长（灰度小图）
+  change_threshold: 0.02    # 差异像素占比，超过判定为“变化”
+  stable_frames: 3          # 连续稳定帧数，达到才放行推理
+  stable_threshold: 0.01    # 判定“稳定”的帧间差异上限
+  cooldown_s: 1.5           # 一次推理后的冷却期，防结果动画自触发
+
+preprocess:
+  min_pixels: 262144        # 512*512，视觉 token 下限
+  max_pixels: 589824        # 768*768，视觉 token 上限
+
+model:
+  path: ./models/Qwen2.5-VL-3B-Instruct-AWQ
+  dtype: fp16               # fp16；量化时随权重格式
+  attn: auto                # auto -> flash_attention_2 若可用否则 sdpa
+  max_new_tokens: 64
+  temperature: 0.1
+  top_p: 0.8
+  system_prompt: "你是一个只解答图片中算式的助手。只输出最终数字答案，不要任何解释、单位或标点。"
+  user_prompt: "计算图中的算式，直接给出答案。"
+
+output:
+  copy_to_clipboard: true
+  show_window: false        # 是否弹悬浮窗展示答案
+
+logging:
+  level: INFO               # DEBUG | INFO | WARNING | ERROR
+  file: ./logs/altobid.log  # 置空则仅控制台
+
+debug:
+  save_frames: false        # 触发推理的帧落盘到 debug_frames/
+  frames_dir: ./debug_frames
