@@ -43,6 +43,32 @@ def test_passthrough_clean_answer(cleaner):
     assert cleaner.clean("A") == "A"
 
 
+def test_extracts_number_from_sentence(cleaner):
+    assert cleaner.clean("答案是5。") == "5"
+    assert cleaner.clean("经过计算，答案是 -7") == "-7"
+    assert cleaner.clean("等于8") == "8"
+    assert cleaner.clean("The answer is 42.") == "42"
+
+
+def test_extracts_from_equation(cleaner):
+    assert cleaner.clean("3 + 2 = 5") == "5"
+    assert cleaner.clean("结果为 12") == "12"
+
+
+def test_extracts_option_letter(cleaner):
+    assert cleaner.clean("答案是 C") == "C"
+    assert cleaner.clean("选 b") == "B"
+
+
+def test_decimal_number(cleaner):
+    assert cleaner.clean("答案：3.5") == "3.5"
+
+
+def test_unrecognized_passthrough(cleaner):
+    # 无数字无字母选项时返回清洗后的末行
+    assert cleaner.clean("无法识别") == "无法识别"
+
+
 # ---- OutputHandler ----
 
 
