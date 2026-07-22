@@ -10,8 +10,7 @@
 // @connect      localhost
 // @connect      aliyuncs.com
 // @connect      *
-// @run-at       document-idle
-// @noframes
+// @run-at       document-start
 // ==/UserScript==
 
 /*
@@ -20,9 +19,13 @@
  * - 需先启动本地服务：python -m altobid.server（默认 127.0.0.1:8799）。
  * - 题目图常在跨域 OSS（如 *.aliyuncs.com），@connect * 放行跨域取图；
  *   若想收紧，删掉 @connect * 只保留实际图床域名即可。
+ * - 未加 @noframes：弹窗可能在 iframe 内渲染，脚本需在子框架也运行才能抓到。
  * - 只依赖 4 个稳定锚点：.whSetPriceD / .whpdtip / img.pricecaptcha / #bidprice，
  *   容器 class、按钮、alt、autocomplete 的差异一律忽略，以吸收目标站差异。
  * - 仅回填答案，不自动点「确定」提交。
+ *
+ * 排障：DEBUG=true 时控制台打印每一步 [altobid] 面包屑。若某步没打印，
+ * 问题就在上一步（脚本没跑 / 没找到弹窗 / 请求被拦）。定位后可关掉。
  */
 
 (function () {
@@ -32,15 +35,29 @@
   const SOLVE = HOST + '/solve';
   const HEALTH = HOST + '/health';
   const TAG = '[altobid]';
+  const DEBUG = true;  // 排障期开启，定位后可改 false
+
+  const dbg = (...a) => DEBUG && console.log(TAG, ...a);
+
+  // 确认 GM_xmlhttpRequest 存在（@grant 缺失/被油猴禁用时它是 undefined）
+  const GMX =
+    typeof GM_xmlhttpRequest !== 'undefined' ? GM_xmlhttpRequest
+    : (typeof GM !== 'undefined' && GM.xmlHttpRequest) ? GM.xmlHttpRequest
+    : null;
+
+  dbg('脚本已注入', location.href, 'GM_xmlhttpRequest=', !!GMX);
+  if (!GMX) {
+    console.error(TAG, 'GM_xmlhttpRequest 不可用：检查 @grant 与油猴权限设置');
+  }
 
   // ---- 与本地服务通信（GM_xmlhttpRequest 绕过页面 CORS）--------------------
 
   function gmRequest(opts) {
     return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
+      GMX({
         ...opts,
         onload: resolve,
-        onerror: () => reject(new Error('请求失败: ' + opts.url)),
+        onerror: (e) => reject(new Error('请求失败: ' + opts.url + ' ' + JSON.stringify(e && e.error || ''))),
         ontimeout: () => reject(new Error('请求超时: ' + opts.url)),
       });
     });
@@ -49,8 +66,10 @@
   async function checkHealth() {
     try {
       const r = await gmRequest({ method: 'GET', url: HEALTH, timeout: 3000 });
+      dbg('health 响应', r.status, r.responseText);
       return JSON.parse(r.responseText).ready === true;
-    } catch (_) {
+    } catch (e) {
+      console.error(TAG, 'health 请求失败（本地服务没起？跨域没放行？）:', e);
       return false;
     }
   }
@@ -130,40 +149,49 @@
   // ---- 主流程 -------------------------------------------------------------
 
   async function handle(box) {
+    dbg('发现弹窗 .whSetPriceD，开始抓题', box);
     const { prompt, img, input } = extract(box);
+    dbg('抓题结果 prompt=', prompt || '(无)', 'img=', img && img.src, 'input=', !!input);
     if (!img || !input) {
-      console.warn(TAG, '未找到图片或输入框，跳过');
+      console.warn(TAG, '未找到图片(img.pricecaptcha)或输入框(#bidprice)，跳过', box);
       box.dataset.altobidDone = '';
       return;
     }
     if (!(await checkHealth())) {
-      console.warn(TAG, '本地服务未就绪，请先启动 python -m altobid.server');
+      console.warn(TAG, '本地服务未就绪，请先启动 python -m altobid.server（并确认油猴已放行到 127.0.0.1 的请求）');
       box.dataset.altobidDone = '';
       return;
     }
     try {
       const src = await waitImageSrc(img);
+      dbg('图片 src 就绪，取图中', src);
       const image = await fetchImage(src);
+      dbg('取图完成，base64 长度', image.length, '请求推理中');
       const answer = await solve(image, prompt);
       fill(input, answer);
       console.info(TAG, 'prompt=', prompt || '(无)', '-> answer=', answer);
     } catch (e) {
-      console.error(TAG, e);
+      console.error(TAG, '处理失败:', e);
       box.dataset.altobidDone = '';  // 允许下次重试
     }
   }
 
-  function scan() {
-    document.querySelectorAll('.whSetPriceD').forEach((box) => {
+  function scan(root) {
+    (root || document).querySelectorAll('.whSetPriceD').forEach((box) => {
       if (box.dataset.altobidDone) return;
       box.dataset.altobidDone = '1';
       handle(box);
     });
   }
 
-  // 弹窗为动态插入，监听 DOM 变化；启动时也扫一次（脚本晚于弹窗注入的情况）
-  new MutationObserver(scan).observe(document.body, {
-    childList: true, subtree: true,
-  });
-  scan();
+  // 弹窗为动态插入，监听 DOM 变化；DOM 就绪后也扫一次（脚本晚于弹窗注入的情况）
+  function start() {
+    dbg('启动监听');
+    new MutationObserver(() => scan()).observe(document.documentElement, {
+      childList: true, subtree: true,
+    });
+    scan();
+  }
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start, { once: true });
 })();
