@@ -21,6 +21,7 @@ python -m altobid.main
 ## 文档
 
 - 架构设计：[docs/architecture.md](docs/architecture.md)
+- 开发步骤：[docs/development.md](docs/development.md)
 
 ## 免责声明
 
