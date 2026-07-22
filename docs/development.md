@@ -171,13 +171,16 @@ curl -X POST http://127.0.0.1:8799/solve \
 ```js
 // ==UserScript==
 // @name         altobid
-// @match        https://目标站点/*        // 按实际站点修改
+// @match        *://*/*                  // 占位，安装时按真实站点收窄
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
 // @connect      *                        // 题图常在跨域 OSS(*.aliyuncs.com)，需放行
+// @run-at       document-start           // 尽早注入，避免错过早注入的弹窗
 // ==/UserScript==
+// 注意：不要加 @noframes——弹窗可能在 iframe 内渲染，脚本需在子框架也运行。
 
 const ENDPOINT = 'http://127.0.0.1:8799/solve';
+const DEBUG = false;  // 排障时改 true，控制台打印每一步 [altobid] 面包屑
 
 // 1. 监听弹窗出现
 new MutationObserver(() => {
@@ -261,8 +264,12 @@ async function handle(box) {
 - `@match` 用占位即可，安装时按真实目标站点填写；样本页面标题为「小马哥模拟拍牌系统」。
 - 只依赖 `.whSetPriceD` / `.whpdtip` / `img.pricecaptcha` / `#bidprice` 四个锚点，
   容器 class、按钮、`alt`/`autocomplete` 差异一律不影响抓取（见 §4.0）。
-- 图片异步加载由 `waitImage` 处理；`src` 用 DOM 属性读出的绝对 URL，兼容相对路径样本。
+- 图片异步加载由 `waitImageSrc` 处理：只等 `src` 属性就绪就取图，**不挂 `<img>` 的 load/error**
+  （跨域/混合内容会让页面里的 `<img>` 渲染失败，但 `GM_xmlhttpRequest` 仍能取到字节）。
+- `src` 用 DOM 属性读出的绝对 URL，兼容 `box-3` 那种相对路径样本。
 - 失败时清掉 `dataset.altobidDone` 以便下次弹窗重试。
+- `DEBUG=true` 时每一步打印 `[altobid]` 面包屑（注入 → 启动监听 → 发现弹窗 →
+  抓题结果 → health 响应 → 取图 → 推理），哪步没打印问题就在上一步；定位后改回 `false`。
 
 **验证点**：打开出价弹窗 → 控制台无报错 → `#bidprice` 自动出现答案。
 

@@ -35,7 +35,7 @@
   const SOLVE = HOST + '/solve';
   const HEALTH = HOST + '/health';
   const TAG = '[altobid]';
-  const DEBUG = true;  // 排障期开启，定位后可改 false
+  const DEBUG = false;  // 排障时改 true，控制台会打印每一步 [altobid] 面包屑
 
   const dbg = (...a) => DEBUG && console.log(TAG, ...a);
 
