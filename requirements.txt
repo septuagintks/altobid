@@ -14,6 +14,7 @@ numpy>=1.26.0
 
 # 配置与工具
 pyyaml>=6.0
+pynput>=1.7.6                 # 全局热键监听
 
 # 量化：bitsandbytes NF4 4bit（默认，8GB 显存卡推荐；运行时从 fp16 权重量化）
 # 注：AWQ 在 Windows + torch2.6 下内核(awq_ext) ABI 不匹配无法加载，故改用 bitsandbytes。

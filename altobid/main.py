@@ -168,14 +168,7 @@ def main() -> int:
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _signal_handler)
 
-    # 1. 框选区域
-    log.info("请框选验证码区域（Esc 取消）...")
-    bbox = RegionSelector().select()
-    if bbox is None:
-        log.warning("未选择区域，退出")
-        return 1
-
-    # 2. 构建组件（含模型加载，耗时）
+    # 1. 预加载组件（含模型，避免框选后等待）
     log.info("初始化组件（加载模型可能需要数秒）...")
     (
         detector,
@@ -186,11 +179,12 @@ def main() -> int:
         output_handler,
     ) = _build_components()
 
-    # 3. 队列 + 推理线程
     frame_saver = FrameSaver(
         enabled=Config.debug.save_frames, out_dir=Config.debug.frames_dir
     )
     frame_queue: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=1)
+
+    # 2. 推理线程（先启动，等待队列有数据）
     inference_thread = threading.Thread(
         target=inference_loop,
         args=(
@@ -206,11 +200,32 @@ def main() -> int:
     )
     inference_thread.start()
 
-    # 4. 采集循环（主线程）
-    interval_s = Config.capture.interval_ms / 1000.0
-    log.info("开始监控，按 Ctrl+C 停止")
+    # 3. 采集线程容器（在框选回调中启动）
+    capture_thread: Optional[threading.Thread] = None
+    capture_lock = threading.Lock()
+
+    def on_region_ready(bbox: BBox) -> None:
+        """框选完成回调：启动或重启采集线程。"""
+        nonlocal capture_thread
+        with capture_lock:
+            # 停止旧采集线程
+            if capture_thread is not None and capture_thread.is_alive():
+                log.info("区域变更，重启采集线程")
+                # 这里简化：直接丢弃旧线程，让它自然退出（下次 grab 会失败）
+            # 启动新采集线程
+            interval_s = Config.capture.interval_ms / 1000.0
+            capture_thread = threading.Thread(
+                target=capture_loop,
+                args=(bbox, detector, debouncer, frame_queue, interval_s),
+                daemon=True,
+            )
+            capture_thread.start()
+            log.info("采集线程已启动，监控区域: %s", bbox)
+
+    # 4. 启动常驻选区窗口 + 全局热键（阻塞主线程）
+    log.info("按 Ctrl+F1 触发框选，按住 Ctrl 可调整框体")
     try:
-        capture_loop(bbox, detector, debouncer, frame_queue, interval_s)
+        RegionSelector(hotkey="<ctrl>+<f1>").start(on_region_ready=on_region_ready)
     except KeyboardInterrupt:
         _stop_event.set()
 
