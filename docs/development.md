@@ -2,358 +2,249 @@
 
 | 项目 | altobid |
 | --- | --- |
-| 版本 | v0.1 |
-| 日期 | 2026-07-22 |
+| 版本 | v0.2（油猴脚本 + 本地服务） |
+| 日期 | 2026-07-23 |
+
+本文档描述从 v0.1（屏幕采集）到 v0.2（油猴脚本 + 本地推理服务）的重构实现步骤。
 
 ---
 
 ## 前置准备
 
-### 1. 安装 Python 3.12
-
-机器当前为 Python 3.14.6，但 PyTorch / Transformers / flash-attn 尚无官方 3.14 wheel。
-
-**Windows 推荐路径**：
-
-- 从 [python.org](https://www.python.org/downloads/) 下载 Python 3.12.x 安装包（最新 3.12.x）
-- 或用 pyenv-win / conda 管理多版本
-
-### 2. 创建虚拟环境
+### 1. Python 3.10~3.12 虚拟环境
 
 ```bash
 cd e:/AMLY/works/Python/altobid
-
-# 用 Python 3.12 创建虚拟环境
 py -3.12 -m venv .venv
-
-# 激活（Windows）
 .venv\Scripts\activate
-
-# 验证版本
-python --version  # 应显示 Python 3.12.x
+python --version   # 3.12.x
 ```
 
-### 3. 安装 PyTorch（先于 requirements.txt）
-
-访问 [pytorch.org](https://pytorch.org/get-started/locally/)，选择对应 CUDA 版本（RTX 4080 推荐 CUDA 12.1+）：
+### 2. 安装 PyTorch（先于 requirements.txt）
 
 ```bash
-# 示例（CUDA 12.1）
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# 示例 CUDA 12.4
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### 4. 安装项目依赖
+### 3. 安装依赖与模型
 
 ```bash
 pip install -r requirements.txt
-```
-
-**注意**：`requirements.txt` 中 flash-attn 已注释。Windows 安装 Flash Attention 2 需：
-
-- 社区预编译 wheel（搜索 `flash-attn windows wheel`）
-- 或本地 CUDA 工具链编译（耗时，易失败）
-- **或跳过**：代码会自动回退到 `sdpa`（见架构文档 §2.2 / §5.6）
-
-量化库（默认 NF4，`requirements.txt` 已含 `bitsandbytes`，一般无需额外操作）：
-
-```bash
-# NF4 4bit 量化（默认，运行时从 fp16 权重量化，8GB 卡推荐）
-pip install bitsandbytes
-```
-
-> 为何不用 AWQ：实测 Windows + torch 2.6 下 AWQ 推理内核 `awq_ext` 加载报 ABI
-> 不匹配（预编译 wheel 仅 0.0.8/0.0.9，针对旧 torch），且 autoawq 已弃用。
-> bitsandbytes NF4 有官方 Windows wheel，加载官方 fp16 权重后运行时量化即可。详见架构文档 §2.2。
-
-### 5. 下载模型权重
-
-下载官方 **fp16** 权重（NF4 会在加载时运行时量化，无需预量化权重），约 6.8GB：
-
-```bash
-pip install huggingface_hub
 huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir ./models/Qwen2.5-VL-3B-Instruct
 ```
 
-或手动从 HF 下载后放到 `models/Qwen2.5-VL-3B-Instruct/`。
+---
+
+## 重构步骤
+
+### 阶段 0：清理旧链路
+
+删除屏幕采集相关模块与依赖：
+
+- 删 `altobid/selector.py` `capture.py` `change_detect.py` `output.py` `debug.py` `main.py`
+- 删对应测试 `tests/test_selector.py` 等
+- `requirements.txt` 移除 `mss` `opencv-python` `pynput`；新增 `flask`
+- `config/default.yaml` 移除 `capture` / `change_detect` / `output` / `debug` 段
+
+> `engine.py` `postprocess.py` `preprocess.py` `config.py` `__init__.py` 保留。
+
+**验证点**：`python -c "from altobid.engine import InferenceEngine"` 不报缺模块。
 
 ---
 
-## 开发步骤
+### 阶段 1：引擎支持题干 prompt
 
-### 阶段 1：基础设施（config / logger）
+**目标**：`InferenceEngine.infer` 接受可选的 per-request prompt。
 
-**目标**：搭建配置加载与日志框架，所有后续模块依赖此基础。
-
-#### 1.1 创建目录结构
-
-```bash
-mkdir altobid config logs debug_frames
-touch altobid/__init__.py
-```
-
-#### 1.2 编写 `config/default.yaml`
-
-参考架构文档 §11 的配置草案，完整写入所有阈值与模型参数。
-
-#### 1.3 编写 `altobid/config.py`
-
-- 加载 `default.yaml` + 可选 `local.yaml` 覆盖
-- 导出 `Config` 类或 dict，供全局引用
-
-#### 1.4 编写 `altobid/__init__.py`
-
-- 初始化 logger（`logging` 模块）
-- 根据 `Config.debug.save_frames` 决定是否启用调试落盘
+- `infer(self, image, prompt: str | None = None)`
+- 构造 messages 时，`prompt` 非空则用它做 user prompt，否则用 `self.user_prompt`。
+- system prompt 保持「只输出答案」约束不变。
 
 **验证点**：
 
 ```python
-from altobid.config import Config
-print(Config.model.path)  # 应输出配置的模型路径
+engine.infer(img)                       # 用默认 prompt
+engine.infer(img, "请输入四位图形校验码")  # 用题干
 ```
 
 ---
 
-### 阶段 2：区域框选（RegionSelector）
+### 阶段 2：预处理适配 PIL 输入
 
-**目标**：用户拖拽框选屏幕矩形，返回 bbox。
+**目标**：`Preprocessor` 输入从 numpy BGR 帧改为 `PIL.Image`。
 
-#### 2.1 编写 `altobid/selector.py`
+- 新增 `process_pil(image: PIL.Image) -> PIL.Image`（或让 `process` 接受 PIL）。
+- 超大图按 `smart_resize` 预缩放；一般情况直接交给 Qwen processor 的 min/max_pixels。
 
-- `tkinter` 全屏 `Canvas` 覆盖层
-- 鼠标按下记起点，拖拽画矩形，松开返回 `(left, top, width, height)`
-- 多显示器：用 `mss.mss().monitors` 校正坐标偏移
-
-#### 2.2 测试
-
-```python
-from altobid.selector import RegionSelector
-bbox = RegionSelector().select()
-print(bbox)  # (x, y, w, h)
-```
-
-拖拽后应输出正确坐标。
+**验证点**：喂一张本地样例 PNG，输出尺寸对齐 factor 且落在像素区间。
 
 ---
 
-### 阶段 3：截图与变化检测（Capturer + ChangeDetector + Debouncer）
+### 阶段 3：Flask 推理服务 `altobid/server.py`
 
-**目标**：循环抓帧，判断画面是否变化并稳定。
-
-#### 3.1 编写 `altobid/capture.py`
-
-- `Capturer` 类：`mss.mss().grab(bbox)`，返回 numpy BGR/BGRA 帧
-- 在自己的线程内创建 mss 实例（mss 非线程安全）
-
-#### 3.2 编写 `altobid/change_detect.py`
-
-- `ChangeDetector`：灰度缩放 + `cv2.absdiff`，计算差异像素占比
-- `Debouncer`：连续 N 帧稳定判定 + cooldown 冷却期
-
-#### 3.3 测试
-
-模拟采集循环，手动刷新验证码页面，观察是否正确检测到变化并稳定后放行。
+**目标**：本机 HTTP 接口，接收「题干 + base64 图片」返回答案。
 
 ```python
-from altobid.capture import Capturer
-from altobid.change_detect import ChangeDetector, Debouncer
-# 伪代码框架
-while True:
-    frame = capturer.grab()
-    if change_detector.changed(frame) and debouncer.stable():
-        print("Trigger inference!")
+from flask import Flask, request, jsonify
+import base64, io, time
+from PIL import Image
+from .config import Config
+from .engine import InferenceEngine
+from .postprocess import PostProcessor
+
+app = Flask(__name__)
+engine = InferenceEngine(...)      # 启动时加载，常驻
+post = PostProcessor()
+
+@app.post("/solve")
+def solve():
+    data = request.get_json(force=True)
+    img_b64 = data["image"].split(",")[-1]      # 容忍 dataURL 前缀
+    image = Image.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGB")
+    prompt = (data.get("prompt") or "").strip() or None
+    t0 = time.perf_counter()
+    raw = engine.infer(image, prompt)
+    answer = post.clean(raw)
+    return jsonify(answer=answer, raw=raw,
+                   latency_ms=round((time.perf_counter()-t0)*1000))
+
+@app.get("/health")
+def health():
+    return jsonify(ready=engine.model is not None or engine.device == "dummy")
+
+def main():
+    app.run(host=Config.server.host, port=Config.server.port, threaded=True)
 ```
 
----
+- 入口：`python -m altobid.server`。
+- **仅绑定 127.0.0.1**，不加 `0.0.0.0`。
+- 单请求串行推理即可（`threaded=True` 但模型本身不并发）。
 
-### 阶段 4：预处理（Preprocessor）
+**验证点**：
 
-**目标**：ROI 等比 resize 到 512~768，转 PIL Image。
-
-#### 4.1 编写 `altobid/preprocess.py`
-
-- BGR→RGB
-- 等比缩放使长边落在 `min_pixels`~`max_pixels`（可先用 `cv2.resize` 预处理，或直接交给 Qwen processor）
-- 转 `PIL.Image`
-
-#### 4.2 测试
-
-```python
-from altobid.preprocess import Preprocessor
-pil_img = Preprocessor().process(frame)
-pil_img.show()  # 显示预处理后图像
+```bash
+curl -X POST http://127.0.0.1:8799/solve \
+  -H "Content-Type: application/json" \
+  -d '{"image":"<base64>","prompt":"计算图中算式"}'
+# -> {"answer":"...", "raw":"...", "latency_ms":...}
 ```
 
 ---
 
-### 阶段 5：推理引擎（InferenceEngine）
+### 阶段 4：油猴脚本 `userscript/altobid.user.js`
 
-**目标**：加载 Qwen2.5-VL，输入图像 + prompt，输出答案。
+**目标**：监听弹窗、抓题、请求服务、回填输入框。
 
-#### 5.1 编写 `altobid/engine.py`
+关键片段：
 
-- 启动时探测 `flash_attn`，决定 `attn_implementation`
-- `from_pretrained` 加载模型与 processor（仅一次，常驻显存）
-- `generate()` 接口：输入 PIL Image，返回生成的文本
+```js
+// ==UserScript==
+// @name         altobid
+// @match        https://目标站点/*        // 按实际站点修改
+// @grant        GM_xmlhttpRequest
+// @connect      127.0.0.1
+// ==/UserScript==
 
-**关键代码框架**：
+const ENDPOINT = 'http://127.0.0.1:8799/solve';
 
-```python
-try:
-    import flash_attn  # noqa
-    attn_impl = "flash_attention_2"
-except Exception:
-    attn_impl = "sdpa"
+// 1. 监听弹窗出现
+new MutationObserver(() => {
+  const box = document.querySelector('.whSetPriceD');
+  if (box && !box.dataset.altobidDone) { box.dataset.altobidDone = '1'; handle(box); }
+}).observe(document.body, { childList: true, subtree: true });
 
-model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-    Config.model.path,
-    torch_dtype=torch.float16,
-    device_map="auto",
-    attn_implementation=attn_impl
-)
-processor = AutoProcessor.from_pretrained(
-    Config.model.path,
-    min_pixels=Config.preprocess.min_pixels,
-    max_pixels=Config.preprocess.max_pixels
-)
+// 2. 抓题
+function extract(box) {
+  const tip = box.querySelector('.whpdtip');
+  const hidden = tip && getComputedStyle(tip).display === 'none';
+  const text = tip ? tip.textContent.trim() : '';
+  const prompt = (hidden || text === 'noprompt') ? '' : text;
+  const img = box.querySelector('img.pricecaptcha');
+  const input = box.querySelector('#bidprice');
+  return { prompt, src: img && img.src, input };
+}
+
+// 3. 取图 -> base64（GM_xmlhttpRequest 绕过 CORS）
+function fetchImage(src) {
+  return new Promise((res, rej) => GM_xmlhttpRequest({
+    method: 'GET', url: src, responseType: 'blob',
+    onload: r => { const fr = new FileReader();
+      fr.onloadend = () => res(fr.result); fr.readAsDataURL(r.response); },
+    onerror: rej,
+  }));
+}
+
+// 4. 请求服务
+function solve(image, prompt) {
+  return new Promise((res, rej) => GM_xmlhttpRequest({
+    method: 'POST', url: ENDPOINT,
+    headers: { 'Content-Type': 'application/json' },
+    data: JSON.stringify({ image, prompt }),
+    onload: r => res(JSON.parse(r.responseText).answer),
+    onerror: rej,
+  }));
+}
+
+// 5. React 受控输入回填
+function fill(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype, 'value').set;
+  setter.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+async function handle(box) {
+  const { prompt, src, input } = extract(box);
+  if (!src || !input) return;
+  try {
+    const image = await fetchImage(src);
+    const answer = await solve(image, prompt);
+    fill(input, answer);
+  } catch (e) { console.error('[altobid]', e); box.dataset.altobidDone = ''; }
+}
 ```
 
-#### 5.2 Prompt 构造
+**注意**：
 
-- System: `你是一个只解答图片中算式的助手。只输出最终数字答案，不要任何解释、单位或标点。`
-- User: `计算图中的算式，直接给出答案。` + 图像
+- `@match` 必须按真实目标站点填写；样本页面标题为「小马哥模拟拍牌系统」。
+- 图片可能在弹窗出现后才异步加载完成，必要时监听 `img.pricecaptcha` 的 `load` 事件
+  或在 `src` 就绪后再取。
+- 失败时清掉 `dataset.altobidDone` 以便重试。
 
-#### 5.3 测试
-
-准备一张简单算式图，单独测试推理输出。
-
-```python
-from altobid.engine import InferenceEngine
-engine = InferenceEngine()
-answer_text = engine.infer(pil_image)
-print(answer_text)  # 应为纯数字或简单答案
-```
+**验证点**：打开出价弹窗 → 控制台无报错 → `#bidprice` 自动出现答案。
 
 ---
 
-### 阶段 6：后处理与输出（PostProcessor + OutputHandler）
+### 阶段 5：联调与调优
 
-**目标**：从模型文本中提取答案，展示并复制到剪贴板。
-
-#### 6.1 编写 `altobid/postprocess.py`
-
-- 正则提取数字：`re.search(r'-?\d+', text)`
-- 容错：无法解析时返回 `None` 或 "未识别"
-
-#### 6.2 编写 `altobid/output.py`
-
-- 控制台打印答案
-- 可选：用 `pyperclip.copy(answer)` 复制到剪贴板
-- 可选：简单的 tkinter 悬浮窗展示
-
-#### 6.3 测试
-
-```python
-from altobid.postprocess import PostProcessor
-from altobid.output import OutputHandler
-answer = PostProcessor().parse(answer_text)
-OutputHandler().show(answer)
-```
-
----
-
-### 阶段 7：主流程装配（main.py）
-
-**目标**：启动采集线程 + 推理线程，用队列解耦。
-
-#### 7.1 编写 `altobid/main.py`
-
-- 用户框选区域（RegionSelector）
-- 创建 `Queue(maxsize=1)`
-- 启动**采集线程**（Capturer → ChangeDetector → Debouncer → Queue.put）
-- 启动**推理线程**（Queue.get → Preprocessor → InferenceEngine → PostProcessor → OutputHandler）
-- 优雅关闭（Ctrl+C 捕获、线程 join）
-
-**伪代码框架**：
-
-```python
-def producer_thread(bbox, queue, stop_event):
-    capturer = Capturer(bbox)
-    detector = ChangeDetector()
-    debouncer = Debouncer()
-    while not stop_event.is_set():
-        frame = capturer.grab()
-        if detector.changed(frame) and debouncer.stable():
-            try:
-                queue.put(frame, block=False)  # 满则丢旧帧
-            except Full:
-                pass
-        time.sleep(Config.capture.interval_ms / 1000)
-
-def consumer_thread(queue, stop_event):
-    engine = InferenceEngine()  # 模型常驻
-    while not stop_event.is_set():
-        frame = queue.get()
-        pil_img = Preprocessor().process(frame)
-        text = engine.infer(pil_img)
-        answer = PostProcessor().parse(text)
-        OutputHandler().show(answer)
-
-if __name__ == "__main__":
-    bbox = RegionSelector().select()
-    queue = Queue(maxsize=1)
-    stop_event = threading.Event()
-    # 启动两线程...
-```
-
-#### 7.2 整合测试
-
-运行 `python -m altobid.main`，框选验证码区域，刷新页面观察是否自动推理并输出答案。
-
----
-
-### 阶段 8：调优与调试
-
-#### 8.1 调参
-
-根据实际表现调整 `config/local.yaml` 中的阈值：
-
-- `change_threshold`：太敏感则误触发，太钝则漏检
-- `stable_frames`：动画长则增大，否则可能抓到过渡帧
-- `cooldown_s`：答案展示动画时长，防止自触发
-
-#### 8.2 调试落盘
-
-开启 `debug.save_frames: true`，把触发推理的帧保存到 `debug_frames/`，人工检查是否抓到了清晰完整的验证码。
-
-#### 8.3 性能监控
-
-可选：记录每次推理的耗时（从 Queue.get 到 OutputHandler.show），观察是否满足时延要求（目标 <1s）。
+- **服务未就绪**：脚本先 `GET /health`，`ready` 为真再抓题。
+- **答案格式**：观察 `raw` 与 `answer`，按题型调 `postprocess.py` 提取规则
+  （多位数字串、字母组合等）。
+- **prompt 效果**：对比「带题干」与「不带题干」的正确率，必要时调 system prompt。
+- **时延**：看 `latency_ms`，目标亚秒级；过慢则确认 NF4 生效、调低 max_pixels。
 
 ---
 
 ## 开发顺序总结
 
-1. **配置与日志**（基础设施）
-2. **区域框选**（交互入口）
-3. **截图与变化检测**（采集循环核心）
-4. **预处理**（图像转换）
-5. **推理引擎**（模型加载与生成）
-6. **后处理与输出**（答案提取与展示）
-7. **主流程装配**（双线程 + 队列）
-8. **调优与调试**（实战调参）
-
-每个阶段完成后**独立测试验证**，再进入下一阶段，避免后期问题难定位。
+1. 清理旧屏幕采集链路（删模块 + 改依赖/配置）
+2. 引擎支持题干 prompt
+3. 预处理适配 PIL 输入
+4. Flask 推理服务
+5. 油猴脚本（抓题 + 取图 + 请求 + 回填）
+6. 联调与调优
 
 ---
 
 ## 注意事项
 
-- **mss 线程安全**：每个使用 mss 的线程内独立创建 `mss.mss()` 实例。
-- **Queue 满时丢旧帧**：`queue.put(frame, block=False)` + 捕获 `Full` 异常，或用 `queue.put_nowait()`。
-- **推理线程异常处理**：模型 OOM / 解析失败不应崩溃整个程序，记日志并继续。
-- **优雅关闭**：捕获 `KeyboardInterrupt`，设置 `stop_event`，等待线程 `join()`，释放模型资源。
+- **服务仅本机**：`host` 固定 `127.0.0.1`，无鉴权，切勿对外暴露。
+- **跨域取图**：油猴脚本用 `GM_xmlhttpRequest` + `@connect`，页面 `fetch` 会被 CORS 拦。
+- **React 回填**：必须原生 setter + `input` 事件，直接 `.value=` 不触发状态更新。
+- **推理异常不崩服务**：捕获并返回 JSON 错误，脚本侧不回填。
+- **弹窗去重**：用 `dataset` 标记，避免 MutationObserver 重复触发同一弹窗。
 
 ---
 
-> 本文档为开发指引，各阶段具体实现细节在编码中可根据实际情况调整。
+> 本文档为 v0.2 重构指引，各阶段具体实现细节在编码中可根据实际情况调整。

@@ -1,6 +1,10 @@
 # 本地配置示例——复制为 config/local.yaml 后按需修改（只需写要覆盖的项）。
 # 键名与 config/default.yaml 保持一致；此处仅列常改项。
 
+server:
+  host: 127.0.0.1          # 仅本机访问，切勿改 0.0.0.0 或对外暴露
+  port: 8799               # 与油猴脚本 ENDPOINT 保持一致
+
 model:
   path: ./models/Qwen2.5-VL-3B-Instruct  # 本地权重目录，或 HF 名称
   dtype: fp16              # fp16 / bf16 / fp32（量化时作为 4bit 计算精度）
@@ -8,28 +12,12 @@ model:
   max_new_tokens: 64
   temperature: 0.1
   top_p: 0.8
-  # system_prompt: "..."   # 自定义 prompt 可覆盖默认（通用视觉问答）
-  # user_prompt: "..."
-
-capture:
-  interval_ms: 200         # 采集间隔（毫秒）
-
-change_detect:
-  method: absdiff          # absdiff（灰度差分，快）/ phash（感知哈希，抗噪）
-  change_threshold: 0.02   # 触发变化的差异像素占比（越小越敏感）
-  pixel_delta: 25          # 单像素灰度差 > 此值才算“变了”
-  stable_frames: 3         # 连续稳定帧数
-  stable_threshold: 0.01   # 判定稳定的帧间差异上限
-  cooldown_s: 1.5          # 推理后冷却时间（秒），防重复触发
+  # system_prompt: "..."   # 自定义 prompt 可覆盖默认（通用验证码识别）
+  # user_prompt: "..."     # 无题干时的兜底 user prompt
 
 preprocess:
   min_pixels: 262144       # 512*512
   max_pixels: 589824       # 768*768
-
-output:
-  copy_to_clipboard: true
-  show_window: false       # 是否弹窗显示答案
-  window_duration_ms: 3000 # 弹窗自动关闭时长（毫秒）
 
 logging:
   level: INFO              # DEBUG / INFO / WARNING / ERROR
