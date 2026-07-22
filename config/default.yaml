@@ -7,6 +7,7 @@ capture:
 change_detect:
   method: absdiff           # absdiff | phash
   downscale: 64             # 变化检测前缩放到的边长（灰度小图）
+  pixel_delta: 25           # 单像素灰度差 > 此值才算“变了”（absdiff 用）
   change_threshold: 0.02    # 差异像素占比，超过判定为“变化”
   stable_frames: 3          # 连续稳定帧数，达到才放行推理
   stable_threshold: 0.01    # 判定“稳定”的帧间差异上限

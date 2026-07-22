@@ -21,3 +21,6 @@ pyyaml>=6.0
 
 # Flash Attention 2（可选，加速；Windows 需社区 wheel 或源码编译，缺失时自动回退 sdpa）
 # flash-attn>=2.5.0
+
+# 开发/测试
+pytest>=8.0.0
