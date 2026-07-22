@@ -2,8 +2,9 @@
 # 键名与 config/default.yaml 保持一致；此处仅列常改项。
 
 model:
-  path: ./models/Qwen2.5-VL-3B-Instruct-AWQ  # 本地权重目录，或 HF 名称
-  dtype: fp16              # fp16 / bf16 / fp32
+  path: ./models/Qwen2.5-VL-3B-Instruct  # 本地权重目录，或 HF 名称
+  dtype: fp16              # fp16 / bf16 / fp32（量化时作为 4bit 计算精度）
+  quantization: nf4        # none（原始 fp16，需 ~7GB 显存）| nf4（4bit，~4GB，8GB 卡推荐）
   max_new_tokens: 64
   temperature: 0.1
   top_p: 0.8

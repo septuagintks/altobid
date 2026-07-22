@@ -47,7 +47,13 @@ def _has_torch_and_model():
 
     cfg = load_config()
     model_path = Path(cfg.model.path)
-    return model_path.exists() and (model_path / "config.json").exists()
+    if not (model_path.exists() and (model_path / "config.json").exists()):
+        return False
+    # 权重下载完整才跑（避免下载中途误触发）
+    has_weights = any(model_path.glob("*.safetensors")) or (
+        model_path / "model.safetensors.index.json"
+    ).exists()
+    return has_weights
 
 
 @pytest.mark.skipif(
@@ -62,6 +68,7 @@ def test_real_inference_loads_model(dummy_image):
     engine = InferenceEngine(
         cfg.model.path,
         dtype=cfg.model.dtype,
+        quantization=cfg.model.get("quantization", "none"),
         max_new_tokens=cfg.model.max_new_tokens,
     )
 
@@ -79,11 +86,16 @@ def test_real_inference_loads_model(dummy_image):
     not _has_torch_and_model(),
     reason="需要 torch + transformers + 模型权重",
 )
-def test_prompt_customization(dummy_image):
-    """自定义 prompt 能传入。"""
+def test_custom_prompt_via_constructor(dummy_image):
+    """自定义 prompt 通过构造函数传入。"""
     from altobid.config import load_config
 
     cfg = load_config()
-    engine = InferenceEngine(cfg.model.path)
-    result = engine.infer(dummy_image, prompt="描述这张图片：")
+    engine = InferenceEngine(
+        cfg.model.path,
+        quantization=cfg.model.get("quantization", "none"),
+        system_prompt="你是助手。",
+        user_prompt="描述这张图片：",
+    )
+    result = engine.infer(dummy_image)
     assert isinstance(result, str)

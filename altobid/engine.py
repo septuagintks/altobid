@@ -43,6 +43,7 @@ class InferenceEngine:
         self,
         model_path: str,
         dtype: str = "fp16",
+        quantization: str = "none",
         max_new_tokens: int = 64,
         temperature: float = 0.1,
         top_p: float = 0.8,
@@ -53,6 +54,7 @@ class InferenceEngine:
     ) -> None:
         self.model_path = Path(model_path)
         self.dtype = _DTYPE_ALIASES.get(dtype.lower(), "float16")
+        self.quantization = quantization.lower()
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.top_p = top_p
@@ -94,6 +96,20 @@ class InferenceEngine:
             )
             return AutoModelForImageTextToText
 
+    def _build_quant_config(self, torch_dtype):
+        """按 self.quantization 构建 BitsAndBytesConfig；none 返回 None。"""
+        if self.quantization != "nf4":
+            return None
+        from transformers import BitsAndBytesConfig
+
+        log.info("启用 bitsandbytes NF4 4bit 量化 (compute_dtype=%s)", torch_dtype)
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch_dtype,
+            bnb_4bit_use_double_quant=True,
+        )
+
     def _load_model(self) -> None:
         """加载模型和 processor，异常时降级到假推理。"""
         try:
@@ -103,9 +119,9 @@ class InferenceEngine:
             if not self.model_path.exists():
                 raise FileNotFoundError(
                     f"模型权重不存在: {self.model_path}\n"
-                    "请先下载 Qwen2.5-VL-3B-Instruct-AWQ:\n"
-                    "  huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct-AWQ "
-                    "--local-dir models/Qwen2.5-VL-3B-Instruct-AWQ"
+                    "请先下载 Qwen2.5-VL-3B-Instruct:\n"
+                    "  huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct "
+                    "--local-dir models/Qwen2.5-VL-3B-Instruct"
                 )
 
             if torch.cuda.is_available():
@@ -117,12 +133,14 @@ class InferenceEngine:
                 torch_dtype = torch.float32
 
             attn_impl = self._detect_attn_implementation()
+            quant_config = self._build_quant_config(torch_dtype)
 
             log.info(
-                "加载模型: %s (device=%s, dtype=%s, attn=%s)",
+                "加载模型: %s (device=%s, dtype=%s, quant=%s, attn=%s)",
                 self.model_path.name,
                 self.device,
                 torch_dtype,
+                self.quantization,
                 attn_impl,
             )
 
@@ -135,15 +153,23 @@ class InferenceEngine:
                 str(self.model_path), **proc_kwargs
             )
 
+            # 量化时交给 accelerate 放置（device_map=auto）；否则显式放到目标设备
+            load_kwargs: dict = {
+                "torch_dtype": torch_dtype,
+                "attn_implementation": attn_impl,
+                "trust_remote_code": True,
+            }
+            if quant_config is not None:
+                load_kwargs["quantization_config"] = quant_config
+                load_kwargs["device_map"] = "auto"
+            else:
+                load_kwargs["device_map"] = self.device
+
             model_cls = self._resolve_model_class()
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=FutureWarning)
                 self.model = model_cls.from_pretrained(
-                    str(self.model_path),
-                    torch_dtype=torch_dtype,
-                    device_map=self.device,
-                    attn_implementation=attn_impl,
-                    trust_remote_code=True,
+                    str(self.model_path), **load_kwargs
                 )
 
             self.model.eval()

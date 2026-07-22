@@ -130,6 +130,7 @@ def _build_components() -> tuple:
     engine = InferenceEngine(
         model_path=m.path,
         dtype=m.dtype,
+        quantization=m.get("quantization", "none"),
         max_new_tokens=m.max_new_tokens,
         temperature=m.temperature,
         top_p=m.top_p,

@@ -15,9 +15,12 @@ numpy>=1.26.0
 # 配置与工具
 pyyaml>=6.0
 
-# 量化（二选一，按所用权重格式安装）
-# autoawq>=0.2.6              # AWQ 权重
-# optimum>=1.20.0            # GPTQ 权重（配合 auto-gptq）
+# 量化：bitsandbytes NF4 4bit（默认，8GB 显存卡推荐；运行时从 fp16 权重量化）
+# 注：AWQ 在 Windows + torch2.6 下内核(awq_ext) ABI 不匹配无法加载，故改用 bitsandbytes。
+bitsandbytes>=0.45.0
+# GPTQ 备选（Windows 需内核编译，未必成功）：
+# optimum>=1.20.0
+# gptqmodel>=1.0.0
 
 # Flash Attention 2（可选，加速；Windows 需社区 wheel 或源码编译，缺失时自动回退 sdpa）
 # flash-attn>=2.5.0
