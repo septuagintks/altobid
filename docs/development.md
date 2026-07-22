@@ -134,9 +134,34 @@ curl -X POST http://127.0.0.1:8799/solve \
 
 ### 阶段 4：油猴脚本 `userscript/altobid.user.js`
 
-**目标**：监听弹窗、抓题、请求服务、回填输入框。
+**目标**：监听弹窗、抓题、请求服务、回填输入框。目标站点与
+[HTMLs/](../HTMLs/) 三份样本结构类似但**或有细微差异**，抓取必须容错。
 
-关键片段：
+#### 4.0 样本差异与适配策略
+
+对比 `box-1` / `box-3` / `site1` 三份样本，同类元素的写法并不一致：
+
+| 维度 | box-1（纯图算式） | box-3（图形校验码） | site1（彩色数字） | 适配做法 |
+| --- | --- | --- | --- | --- |
+| 题干节点 | `display:none` + `<span>noprompt</span>` | 可见 `<span>请输入四位图形校验码</span>` | 可见**纯文本节点**（无 span）+ 内联 `font-size` | 取 `.whpdtip` 的 `textContent().trim()`，不假设有 `<span>` |
+| 题干含义 | 隐藏/`noprompt` → 无题干 | 有题干 | 有题干 | 隐藏或文本 `=== 'noprompt'` 视为空 prompt |
+| 图片容器 | `whpdCapItem whpdCapItem-captcha-box` | `whpdCapItem whpdCapLeft` | `whpdCapItem1 whpdCapItem-captcha-box` | **不依赖容器 class**，直接 `img.pricecaptcha` |
+| 图片 src | 绝对 OSS URL | 相对路径 `inputvercode/demo009.png` | URL-encoded 绝对 URL | 用 `img.src`（浏览器已解析为绝对 URL） |
+| 输入容器 | `whpdCapItem-noprompt` | `whpdCapRight` | `whpdCapItem-noprompt` | **不依赖容器 class**，直接 `#bidprice` |
+| 按钮区 | `whpdBtnbox` | `whpdBtnbox` | `whpdBtnbox1` + 内联 `onclick` | 不涉及（只回填不提交） |
+
+**原则**：只依赖三个稳定锚点 —— `.whSetPriceD`（弹窗根）、`img.pricecaptcha`（图）、
+`#bidprice`（输入框），外加 `.whpdtip`（题干，可缺失）。容器 class、按钮、`alt`、
+`autocomplete` 等一律不作为定位依据，以吸收目标站的差异。
+
+- **题干取 `textContent` 而非 `innerText`**：`site1` 的文字是裸文本节点，且要能读到隐藏元素
+  （`display:none` 时 `innerText` 为空，`textContent` 仍有值），据此判断是否 `noprompt`。
+- **src 用 `img.src` 属性**：DOM 属性读出来是浏览器解析后的绝对 URL，`box-3` 的相对路径
+  也会补全为完整地址，`GM_xmlhttpRequest` 才能取到。
+- **等图片加载完成**：弹窗可能先插入、图片后到；若 `img.complete && img.naturalWidth>0`
+  直接抓，否则挂 `img.addEventListener('load', ...)` 再抓。
+
+#### 4.1 关键片段
 
 ```js
 // ==UserScript==
@@ -154,15 +179,25 @@ new MutationObserver(() => {
   if (box && !box.dataset.altobidDone) { box.dataset.altobidDone = '1'; handle(box); }
 }).observe(document.body, { childList: true, subtree: true });
 
-// 2. 抓题
+// 2. 抓题（只依赖稳定锚点，容器 class 差异一律忽略）
 function extract(box) {
   const tip = box.querySelector('.whpdtip');
-  const hidden = tip && getComputedStyle(tip).display === 'none';
+  // 用 textContent：site1 是裸文本节点，且隐藏元素 innerText 会为空
   const text = tip ? tip.textContent.trim() : '';
+  const hidden = tip && getComputedStyle(tip).display === 'none';
   const prompt = (hidden || text === 'noprompt') ? '' : text;
-  const img = box.querySelector('img.pricecaptcha');
+  const img = box.querySelector('img.pricecaptcha');   // 不看容器 class
   const input = box.querySelector('#bidprice');
-  return { prompt, src: img && img.src, input };
+  return { prompt, img, input };
+}
+
+// 图片可能异步加载，等就绪再返回其 src（已是绝对 URL）
+function waitImage(img) {
+  if (img.complete && img.naturalWidth > 0) return Promise.resolve(img.src);
+  return new Promise((res, rej) => {
+    img.addEventListener('load', () => res(img.src), { once: true });
+    img.addEventListener('error', rej, { once: true });
+  });
 }
 
 // 3. 取图 -> base64（GM_xmlhttpRequest 绕过 CORS）
@@ -195,9 +230,10 @@ function fill(input, value) {
 }
 
 async function handle(box) {
-  const { prompt, src, input } = extract(box);
-  if (!src || !input) return;
+  const { prompt, img, input } = extract(box);
+  if (!img || !input) return;
   try {
+    const src = await waitImage(img);     // 等图加载完成
     const image = await fetchImage(src);
     const answer = await solve(image, prompt);
     fill(input, answer);
@@ -207,10 +243,11 @@ async function handle(box) {
 
 **注意**：
 
-- `@match` 必须按真实目标站点填写；样本页面标题为「小马哥模拟拍牌系统」。
-- 图片可能在弹窗出现后才异步加载完成，必要时监听 `img.pricecaptcha` 的 `load` 事件
-  或在 `src` 就绪后再取。
-- 失败时清掉 `dataset.altobidDone` 以便重试。
+- `@match` 用占位即可，安装时按真实目标站点填写；样本页面标题为「小马哥模拟拍牌系统」。
+- 只依赖 `.whSetPriceD` / `.whpdtip` / `img.pricecaptcha` / `#bidprice` 四个锚点，
+  容器 class、按钮、`alt`/`autocomplete` 差异一律不影响抓取（见 §4.0）。
+- 图片异步加载由 `waitImage` 处理；`src` 用 DOM 属性读出的绝对 URL，兼容相对路径样本。
+- 失败时清掉 `dataset.altobidDone` 以便下次弹窗重试。
 
 **验证点**：打开出价弹窗 → 控制台无报错 → `#bidprice` 自动出现答案。
 
