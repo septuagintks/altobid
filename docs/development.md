@@ -54,27 +54,27 @@ pip install -r requirements.txt
 - 或本地 CUDA 工具链编译（耗时，易失败）
 - **或跳过**：代码会自动回退到 `sdpa`（见架构文档 §2.2 / §5.6）
 
-量化库二选一按需装：
+量化库（默认 NF4，`requirements.txt` 已含 `bitsandbytes`，一般无需额外操作）：
 
 ```bash
-# AWQ 权重（推荐）
-pip install autoawq
-
-# 或 GPTQ 权重
-pip install optimum auto-gptq
+# NF4 4bit 量化（默认，运行时从 fp16 权重量化，8GB 卡推荐）
+pip install bitsandbytes
 ```
+
+> 为何不用 AWQ：实测 Windows + torch 2.6 下 AWQ 推理内核 `awq_ext` 加载报 ABI
+> 不匹配（预编译 wheel 仅 0.0.8/0.0.9，针对旧 torch），且 autoawq 已弃用。
+> bitsandbytes NF4 有官方 Windows wheel，加载官方 fp16 权重后运行时量化即可。详见架构文档 §2.2。
 
 ### 5. 下载模型权重
 
-在 HuggingFace 找 Qwen2.5-VL-3B-Instruct 的量化版本（AWQ/GPTQ），下载到 `./models/`：
+下载官方 **fp16** 权重（NF4 会在加载时运行时量化，无需预量化权重），约 6.8GB：
 
 ```bash
-# 示例（需先安装 huggingface_hub）
 pip install huggingface_hub
-huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct-AWQ --local-dir ./models/Qwen2.5-VL-3B-Instruct-AWQ
+huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir ./models/Qwen2.5-VL-3B-Instruct
 ```
 
-或手动从 HF 下载后放到 `models/<model-name>/`。
+或手动从 HF 下载后放到 `models/Qwen2.5-VL-3B-Instruct/`。
 
 ---
 
