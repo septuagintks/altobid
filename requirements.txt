@@ -1,0 +1,23 @@
+# NOTE: 需在 Python 3.10 ~ 3.12 环境安装（3.14 暂无稳定 wheel）。
+# torch 请按 CUDA 版本从 https://pytorch.org 对应命令安装，此处不锁定。
+
+# 推理核心
+transformers>=4.49.0
+accelerate>=0.34.0
+qwen-vl-utils>=0.0.8          # Qwen2.5-VL 官方图像预处理工具
+pillow>=10.0.0
+
+# 屏幕采集与图像处理
+mss>=9.0.1                    # 高速屏幕截图
+opencv-python>=4.9.0          # 变化检测 / ROI resize
+numpy>=1.26.0
+
+# 配置与工具
+pyyaml>=6.0
+
+# 量化（二选一，按所用权重格式安装）
+# autoawq>=0.2.6              # AWQ 权重
+# optimum>=1.20.0            # GPTQ 权重（配合 auto-gptq）
+
+# Flash Attention 2（可选，加速；Windows 需社区 wheel 或源码编译，缺失时自动回退 sdpa）
+# flash-attn>=2.5.0

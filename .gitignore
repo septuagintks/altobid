@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Model weights / caches
+models/
+*.safetensors
+*.bin
+*.gguf
+.cache/
+huggingface/
+
+# Logs / captures / debug
+logs/
+*.log
+captures/
+debug_frames/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local config / secrets
+config/local.yaml
+.env
