@@ -8,6 +8,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
 // @connect      localhost
+// @connect      aliyuncs.com
+// @connect      *
 // @run-at       document-idle
 // @noframes
 // ==/UserScript==
@@ -16,6 +18,8 @@
  * 说明：
  * - @match 用通配占位，安装时请按真实目标站点收窄（如 https://目标域名/*）。
  * - 需先启动本地服务：python -m altobid.server（默认 127.0.0.1:8799）。
+ * - 题目图常在跨域 OSS（如 *.aliyuncs.com），@connect * 放行跨域取图；
+ *   若想收紧，删掉 @connect * 只保留实际图床域名即可。
  * - 只依赖 4 个稳定锚点：.whSetPriceD / .whpdtip / img.pricecaptcha / #bidprice，
  *   容器 class、按钮、alt、autocomplete 的差异一律忽略，以吸收目标站差异。
  * - 仅回填答案，不自动点「确定」提交。
@@ -56,6 +60,12 @@
     const r = await gmRequest({
       method: 'GET', url: src, responseType: 'blob', timeout: 15000,
     });
+    if (r.status && (r.status < 200 || r.status >= 300)) {
+      throw new Error('取图 HTTP ' + r.status + ': ' + src);
+    }
+    if (!r.response || !/^image\//.test(r.response.type || '')) {
+      throw new Error('取图返回非图片: ' + (r.response && r.response.type));
+    }
     return await new Promise((resolve, reject) => {
       const fr = new FileReader();
       fr.onloadend = () => resolve(fr.result);
@@ -89,12 +99,22 @@
     return { prompt, img, input };
   }
 
-  // 图片可能异步加载，等就绪再返回 src（已是浏览器解析后的绝对 URL）
-  function waitImage(img) {
-    if (img.complete && img.naturalWidth > 0) return Promise.resolve(img.src);
+  // 等 src 被填上就返回其绝对 URL（img.src 属性已由浏览器解析为绝对地址）。
+  // 关键：不依赖 <img> 在页面里加载成功——跨域/混合内容(http 图 on https 页)会让
+  // img 渲染失败(naturalWidth=0)甚至报 error，但 GM_xmlhttpRequest 仍能取到字节，
+  // 所以只等 src 就绪，取图交给 GM。
+  function waitImageSrc(img, timeout = 10000) {
+    const ready = () => img.getAttribute('src') && img.src && img.src !== location.href;
+    if (ready()) return Promise.resolve(img.src);
     return new Promise((resolve, reject) => {
-      img.addEventListener('load', () => resolve(img.src), { once: true });
-      img.addEventListener('error', () => reject(new Error('图片加载失败')), { once: true });
+      const obs = new MutationObserver(() => {
+        if (ready()) { obs.disconnect(); clearTimeout(timer); resolve(img.src); }
+      });
+      obs.observe(img, { attributes: true, attributeFilter: ['src'] });
+      const timer = setTimeout(() => {
+        obs.disconnect();
+        reject(new Error('图片 src 迟迟未就绪'));
+      }, timeout);
     });
   }
 
@@ -122,7 +142,7 @@
       return;
     }
     try {
-      const src = await waitImage(img);
+      const src = await waitImageSrc(img);
       const image = await fetchImage(src);
       const answer = await solve(image, prompt);
       fill(input, answer);

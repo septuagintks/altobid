@@ -159,8 +159,12 @@ curl -X POST http://127.0.0.1:8799/solve \
   （`display:none` 时 `innerText` 为空，`textContent` 仍有值），据此判断是否 `noprompt`。
 - **src 用 `img.src` 属性**：DOM 属性读出来是浏览器解析后的绝对 URL，`box-3` 的相对路径
   也会补全为完整地址，`GM_xmlhttpRequest` 才能取到。
-- **等图片加载完成**：弹窗可能先插入、图片后到；若 `img.complete && img.naturalWidth>0`
-  直接抓，否则挂 `img.addEventListener('load', ...)` 再抓。
+- **跨域取图必须放行**：`box-1`(http OSS) / `box-2`(https OSS) 的图在 `*.aliyuncs.com`，
+  脚本头需 `@connect *`（或列出具体图床域名），否则 `GM_xmlhttpRequest` 被拦——
+  这正是「只有相对路径的 `box-3` 能成、跨域的 box-1/2 没反应」的原因。
+- **只等 `src` 就绪，不等 `<img>` 加载成功**：跨域或混合内容（http 图 on https 页）会让
+  页面里的 `<img>` 渲染失败（`naturalWidth=0`）甚至触发 `error`，但 `GM_xmlhttpRequest`
+  仍能取到字节。故用 MutationObserver 监听 `src` 属性出现即取，不挂 `load`/`error`。
 
 #### 4.1 关键片段
 
@@ -170,6 +174,7 @@ curl -X POST http://127.0.0.1:8799/solve \
 // @match        https://目标站点/*        // 按实际站点修改
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
+// @connect      *                        // 题图常在跨域 OSS(*.aliyuncs.com)，需放行
 // ==/UserScript==
 
 const ENDPOINT = 'http://127.0.0.1:8799/solve';
@@ -192,21 +197,30 @@ function extract(box) {
   return { prompt, img, input };
 }
 
-// 图片可能异步加载，等就绪再返回其 src（已是绝对 URL）
-function waitImage(img) {
-  if (img.complete && img.naturalWidth > 0) return Promise.resolve(img.src);
-  return new Promise((res, rej) => {
-    img.addEventListener('load', () => res(img.src), { once: true });
-    img.addEventListener('error', rej, { once: true });
+// 等 src 就绪即可，不依赖 <img> 在页面里加载成功。
+// 跨域/混合内容(http 图 on https 页)会让 img 渲染失败(naturalWidth=0)甚至报 error，
+// 但 GM_xmlhttpRequest 仍能取到字节，所以只等 src、取图交给 GM。
+function waitImageSrc(img) {
+  const ready = () => img.getAttribute('src') && img.src !== location.href;
+  if (ready()) return Promise.resolve(img.src);
+  return new Promise((res) => {
+    const obs = new MutationObserver(() => {
+      if (ready()) { obs.disconnect(); res(img.src); }
+    });
+    obs.observe(img, { attributes: true, attributeFilter: ['src'] });
   });
 }
 
-// 3. 取图 -> base64（GM_xmlhttpRequest 绕过 CORS）
+// 3. 取图 -> base64（GM_xmlhttpRequest 绕过 CORS；校验状态码与类型）
 function fetchImage(src) {
   return new Promise((res, rej) => GM_xmlhttpRequest({
     method: 'GET', url: src, responseType: 'blob',
-    onload: r => { const fr = new FileReader();
-      fr.onloadend = () => res(fr.result); fr.readAsDataURL(r.response); },
+    onload: r => {
+      if (r.status && (r.status < 200 || r.status >= 300))
+        return rej(new Error('取图 HTTP ' + r.status));
+      const fr = new FileReader();
+      fr.onloadend = () => res(fr.result); fr.readAsDataURL(r.response);
+    },
     onerror: rej,
   }));
 }
@@ -234,7 +248,7 @@ async function handle(box) {
   const { prompt, img, input } = extract(box);
   if (!img || !input) return;
   try {
-    const src = await waitImage(img);     // 等图加载完成
+    const src = await waitImageSrc(img);  // 等 src 就绪（不等 DOM 加载）
     const image = await fetchImage(src);
     const answer = await solve(image, prompt);
     fill(input, answer);
