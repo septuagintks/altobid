@@ -121,9 +121,9 @@ class InferenceEngine:
             if not self.model_path.exists():
                 raise FileNotFoundError(
                     f"模型权重不存在: {self.model_path}\n"
-                    "请先下载 Qwen2.5-VL-3B-Instruct:\n"
-                    "  huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct "
-                    "--local-dir models/Qwen2.5-VL-3B-Instruct"
+                    "请先下载 Qwen2.5-VL-7B-Instruct:\n"
+                    "  huggingface-cli download Qwen/Qwen2.5-VL-7B-Instruct "
+                    "--local-dir models/Qwen2.5-VL-7B-Instruct"
                 )
 
             if torch.cuda.is_available():

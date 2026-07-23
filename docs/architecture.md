@@ -16,7 +16,7 @@ altobid 由两个组件组成，通过本机回环 HTTP 协作：
 1. **油猴脚本**（浏览器内）：监听拍牌出价弹窗 `.whSetPriceD` 的出现，抓取其中的
    **题干**（`.whpdtip`）与**题目图片**（`img.pricecaptcha`），请求本地服务得到答案后，
    自动把答案填入出价输入框 `#bidprice`。
-2. **本地推理服务**（本机）：加载 Qwen2.5-VL-3B-Instruct，接收「题干 + 图片」，
+2. **本地推理服务**（本机）：加载 Qwen2.5-VL-7B-Instruct，接收「题干 + 图片」，
    原生读图作答，返回纯答案。
 
 核心设计取向：
@@ -162,7 +162,7 @@ flowchart TD
 
 | 参数 | 值 | 说明 |
 | --- | --- | --- |
-| model | Qwen2.5-VL-3B-Instruct | 小参数多模态（官方 fp16 权重） |
+| model | Qwen2.5-VL-7B-Instruct | 7B 参数多模态模型（官方 fp16 权重） |
 | dtype | fp16 | NF4 时作为 4bit 计算精度 |
 | quantization | nf4（默认）/ none | bitsandbytes 运行时 4bit；none 为原始 fp16 |
 | attn | flash_attention_2 → sdpa | 探测回退 |
@@ -218,7 +218,7 @@ altobid/
 | 跨域取图 | 用 `GM_xmlhttpRequest` + `@connect`，绕过页面 CORS 并携带站点 cookie |
 | React 回填 | 必须用原生 value setter + `input` 事件，否则框架状态不更新 |
 | Python 版本 | 3.10~3.12，torch/transformers 无 3.13+ 稳定 wheel |
-| 显存 | NF4 ~2.5GB；12GB 卡可关量化用 fp16 |
+| 显存 | NF4 建议 12GB 显存；原始 fp16 建议 24GB+ 显存 |
 | FA2 on Windows | 无官方 wheel，缺失自动回退 `sdpa` |
 
 ---

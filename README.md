@@ -3,13 +3,13 @@
 油猴脚本 + 本地多模态模型的网页验证码自动答题器。
 
 浏览器里的油猴脚本负责抓取拍牌出价弹窗（`.whSetPriceD`）中的**题干**与**题目图片**，
-发送给本机的推理服务；服务用本地 Qwen2.5-VL-3B-Instruct 读图作答，脚本再把答案
+发送给本机的推理服务；服务用本地 Qwen2.5-VL-7B-Instruct 读图作答，脚本再把答案
 自动填入出价输入框（`#bidprice`）。
 
 - 完全本地推理，图片不出本机（仅在 `浏览器 ↔ 本机 127.0.0.1` 之间传输）
 - **原生视觉理解**：直接读图答题，不依赖 OCR + 文本推理
 - **题干驱动**：把页面上的题目文字作为 prompt 传给模型，无题干时按纯图题处理
-- NF4 量化（bitsandbytes），仅需 ~2.5GB 显存
+- NF4 量化（bitsandbytes），建议配备 12GB 显存；原始 fp16 建议 24GB+ 显存
 - 推理框架：Transformers + Flash Attention 2（缺失时回退 `sdpa`）
 
 ## 架构
@@ -24,7 +24,7 @@
 │    ├─ 图片  img.pricecaptcha (src)            │  JSON  │   engine.infer(image, prompt)    │
 │    │        GM_xmlhttpRequest 取 blob→base64  │        │   postprocess → answer           │
 │    └─ 输入  #bidprice                          │ ◀───── │  /health                         │
-│  用 native setter + input 事件回填答案         │ answer │  Qwen2.5-VL-3B (常驻显存)         │
+│  用 native setter + input 事件回填答案         │ answer │  Qwen2.5-VL-7B (常驻显存)         │
 └───────────────────────────────────────────────┘        └──────────────────────────────────┘
 ```
 
@@ -52,7 +52,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 
 # 下载模型权重（官方 fp16，NF4 在加载时运行时量化）
-huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir ./models/Qwen2.5-VL-3B-Instruct
+huggingface-cli download Qwen/Qwen2.5-VL-7B-Instruct --local-dir ./models/Qwen2.5-VL-7B-Instruct
 ```
 
 ### 2. 启动服务
@@ -82,7 +82,7 @@ server:
   port: 8799
 
 model:
-  path: ./models/Qwen2.5-VL-3B-Instruct
+  path: ./models/Qwen2.5-VL-7B-Instruct
   dtype: fp16          # fp16 / bf16 / fp32
   quantization: nf4    # nf4 / none（fp16 直接推理）
   max_new_tokens: 64

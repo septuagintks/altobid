@@ -10,6 +10,7 @@ def test_load_default():
     cfg = load_config()
     assert cfg.server.host == "127.0.0.1"
     assert cfg.server.port == 8799
+    assert Path(cfg.model.path).name == "Qwen2.5-VL-7B-Instruct"
     assert cfg.model.max_new_tokens == 64
 
 

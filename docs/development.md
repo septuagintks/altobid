@@ -31,7 +31,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
 ```bash
 pip install -r requirements.txt
-huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir ./models/Qwen2.5-VL-3B-Instruct
+huggingface-cli download Qwen/Qwen2.5-VL-7B-Instruct --local-dir ./models/Qwen2.5-VL-7B-Instruct
 ```
 
 ---
